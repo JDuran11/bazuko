@@ -1,6 +1,8 @@
 *.dmg
-/node_modules
+/web/node_modules
 # Build de Vite (se genera con npm run build)
-/dist
-playwright-report/
-test-results/
+/web/dist
+/web/playwright-report/
+/web/test-results/
+# Build de la versión nativa (CMake)
+/native/build/
