@@ -20,6 +20,12 @@ FetchContent_Declare(doctest
   GIT_SHALLOW TRUE)
 FetchContent_MakeAvailable(doctest)
 
+FetchContent_Declare(json
+  GIT_REPOSITORY https://github.com/nlohmann/json.git
+  GIT_TAG v3.11.3
+  GIT_SHALLOW TRUE)
+FetchContent_MakeAvailable(json)
+
 if(BAZUKO_BUILD_APP)
   # SDL3: usa el paquete del sistema (dnf install SDL3-devel) o lo compila desde fuente.
   find_package(SDL3 3.2 QUIET CONFIG)
@@ -35,8 +41,12 @@ if(BAZUKO_BUILD_APP)
 endif()
 
 # Lógica sin dependencias de GL/SDL (testeable en consola).
-add_library(bazuko_core STATIC src/core/FrameMetrics.cpp src/core/FrameLoop.cpp)
+add_library(bazuko_core STATIC
+  src/core/FrameMetrics.cpp
+  src/core/FrameLoop.cpp
+  src/game/data/GameData.cpp)
 target_include_directories(bazuko_core PUBLIC src)
+target_link_libraries(bazuko_core PUBLIC nlohmann_json::nlohmann_json)
 target_compile_options(bazuko_core PRIVATE -Wall -Wextra)
 
 if(BAZUKO_BUILD_APP)
@@ -46,6 +56,7 @@ if(BAZUKO_BUILD_APP)
 endif()
 
 enable_testing()
-add_executable(bazuko_tests tests/core_test.cpp)
+add_executable(bazuko_tests tests/main_test.cpp tests/core_test.cpp tests/data_test.cpp)
+target_compile_definitions(bazuko_tests PRIVATE BAZUKO_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
 target_link_libraries(bazuko_tests PRIVATE bazuko_core doctest::doctest)
 add_test(NAME bazuko_tests COMMAND bazuko_tests)
