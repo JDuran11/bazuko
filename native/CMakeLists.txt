@@ -170,7 +170,7 @@ if(BAZUKO_BUILD_APP)
 endif()
 
 enable_testing()
-add_executable(bazuko_tests tests/main_test.cpp tests/core_test.cpp tests/data_test.cpp tests/sim_test.cpp tests/save_test.cpp tests/world_test.cpp tests/traffic_test.cpp tests/render_logic_test.cpp tests/canvas_test.cpp tests/visual_test.cpp tests/lights_test.cpp tests/gltf_test.cpp tests/animation_test.cpp tests/character_test.cpp tests/procedural_test.cpp tests/game_test.cpp tests/audio_test.cpp tests/ui_test.cpp)
+add_executable(bazuko_tests tests/main_test.cpp tests/core_test.cpp tests/data_test.cpp tests/sim_test.cpp tests/save_test.cpp tests/world_test.cpp tests/traffic_test.cpp tests/render_logic_test.cpp tests/canvas_test.cpp tests/visual_test.cpp tests/lights_test.cpp tests/gltf_test.cpp tests/animation_test.cpp tests/character_test.cpp tests/procedural_test.cpp tests/game_test.cpp tests/audio_test.cpp tests/ui_test.cpp tests/integration_test.cpp)
 target_compile_definitions(bazuko_tests PRIVATE BAZUKO_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
 target_link_libraries(bazuko_tests PRIVATE bazuko_gfx bazuko_audio doctest::doctest)
 add_test(NAME bazuko_tests COMMAND bazuko_tests)

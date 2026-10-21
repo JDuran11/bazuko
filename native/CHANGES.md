@@ -118,3 +118,15 @@ Diferencias respecto al web:
 - Nuevas opciones: `--new`, `--no-audio`, `--save RUTA`, `--creator`, `--open PANEL` (capturas de interfaz).
 
 Diferencias respecto al web: sin vista 3D propia en el creador (se usa el mundo); sin iconos en los menús; la mochila y los paneles no se pueden mover.
+
+## Fase 10 · pulido y paridad
+- **Barrido contra `docs-contexto/02-mecanicas.md`**: la desaturación por ánimo bajo ya se aplica al color de la escena (`applyDesaturation`), la mesa de crafteo es interactuable (fase 8) y `player.speedMult` muerto no se porta.
+- **Tests de integración** (`integration_test.cpp`): un día completo de reloj (3600 s) con rutina de supervivencia (recoger, comer, beber) mantiene todas las necesidades en 0–100 sin NaN, guardar y recargar da el mismo estado, y sin comer ni beber el personaje muere, reaparece con ≥ 60 % y sigue vivo. Suite total: 222 casos, ~2,6 M aserciones.
+- **README** con compilación, controles, opciones y estructura.
+- Rendimiento (Release, Intel UHD): ~8 ms/cuadro con 72 personajes, ~1.270 dibujos (265 de sombra), arranque ~8 s (5,4 s cargando personajes con barra de progreso), ~283 MB de RAM.
+
+## Pendientes conocidos
+- Mapas normales/relieve y IBL reales (se aproximan con color base y ambiente constante).
+- Clips de acción (`buscar`, `pedir`, `comer`, `dormir`) del personaje: solo existen idle/walk/run, así que las acciones caen en idle.
+- Texto en los carteles de la tienda; vista 3D propia del creador; iconos en los menús.
+- Al eliminar `web/`: mover `web/public/models` y `web/public/audio` a `native/assets/` y quitar el movimiento de `.gitattributes`/LFS que apunta a `web/`.
