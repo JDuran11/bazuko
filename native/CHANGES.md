@@ -47,6 +47,21 @@ Aproximaciones del render (se afinan en las fases 5–6):
 - El IBL de `RoomEnvironment` (PMREM) se sustituye por una irradiancia ambiental constante escalada con `environmentIntensity` (`kEnvIrradiance` en `Renderer.cpp`).
 - Edificios como cajas de color plano y personajes/vehículos como cajas: la geometría real llega en las fases 5 y 7. Sin sombras todavía (fase 6).
 
+## Fase 5 · ciudad visual
+| # | Problema en la versión web | Corrección nativa |
+|---|---|---|
+| 8 | El césped (textura de tierra casi negra × verde oscuro `#3e5a2c`) quedaba prácticamente negro. | El tinte se amplifica ×12 para que se vea verde sin perder el relieve de la textura. |
+
+Lo portado (sin paridad bit a bit: el JS usa `Math.random` sin semilla y un navegador para rasterizar):
+- **Texturas procedurales** (`ProceduralTextures.cpp`): asfalto, andén, ladrillo, fachadas (pintada/ladrillo/ruina con ventanas encendidas, rejas, persianas con grafiti y avisos), tejas, losa, cartón, bolsa, tierra, concreto y letreros. Se dibujan con `Canvas2D` (CPU: rectángulos, degradados, trazos, elipses y texto con Overpass vía `stb_truetype`).
+- **Ciudad** (`VisualWorld`): suelo con UV en metros y bordillos, marcas viales, casas de 2–4 tiles con zócalo + paredes altas + techo, relleno y perímetro, letreros de locales, balcones, tanques, faroles, bancas, canecas con fuego, zorras, cambuches, colchones, ropa colgada, árboles, estación de la troncal, vendedores y los cerros del fondo.
+- **BuildingVisibility** (cinco rayos, fundido de 0,22 s, espera de 0,18 s): en isométrica las paredes/techos que tapan al jugador se atenúan; las casas con alguna pieza atenuada se dibujan por piezas y el resto sale del lote agrupado (un SSBO de indicadores descarta sus vértices en el shader).
+- **Culling por frustum** de cada lote de 32 m, materiales con texturas (mipmaps y anisotropía 8), emisivo nocturno de ventanas y carteles sin luz.
+- Textura de fachada compartida por clave `ancho:pisos:estilo:variante`.
+
+Sin portar todavía: las luces dinámicas (faroles, fuego), sombras y los modelos de personajes (fases 6 y 7). Los cristales de la estación son láminas opacas.
+Diferencias de dibujo: sin mapas de relieve (`bumpMap`) ni de rugosidad; el texto del avisito «FRÁGIL ↑» del cartón no lleva la flecha (no está en la fuente).
+
 Pendientes de fases siguientes (ya identificados):
 - Fase 8: `sortValueMult` sin efecto (se aplicará al valor de lo seleccionado), aviso al perder ítems por inventario lleno, multiplicador por higiene baja en la probabilidad de enfermar (`StatsSystem::getDiseaseChanceMultiplier` ya existe pero nadie lo usa en la versión web), `CraftingStation` sin interacción, `player.speedMult` muerto.
 - Fase 10: desaturación por ánimo bajo (`getDesaturation` ya está portado).

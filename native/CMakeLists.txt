@@ -77,16 +77,32 @@ target_include_directories(bazuko_core PUBLIC src)
 target_link_libraries(bazuko_core PUBLIC nlohmann_json::nlohmann_json)
 target_compile_options(bazuko_core PRIVATE -Wall -Wextra)
 
+# Gráficos en CPU (mallas, canvas 2D, texturas procedurales, mundo visual): sin GL ni SDL, testeables.
+add_library(bazuko_gfx STATIC
+  src/render/MeshBuilder.cpp
+  src/render/Canvas2D.cpp
+  src/render/ProceduralTextures.cpp
+  src/render/BuildingVisibility.cpp
+  src/render/Frustum.cpp
+  src/render/VisualWorld.cpp
+  src/render/VisualProps.cpp)
+target_include_directories(bazuko_gfx PUBLIC src)
+target_include_directories(bazuko_gfx SYSTEM PUBLIC third_party/stb)
+target_compile_definitions(bazuko_gfx PUBLIC BAZUKO_ASSETS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets")
+target_link_libraries(bazuko_gfx PUBLIC bazuko_core glm::glm)
+target_compile_options(bazuko_gfx PRIVATE -Wall -Wextra)
+
+add_executable(texdump tools/texdump.cpp)
+target_link_libraries(texdump PRIVATE bazuko_gfx)
+
 if(BAZUKO_BUILD_APP)
   add_library(bazuko_render STATIC
     third_party/glad/src/gl.c
-    src/render/MeshBuilder.cpp
     src/render/Gpu.cpp
-    src/render/WorldGeometry.cpp
     src/render/Renderer.cpp)
   target_include_directories(bazuko_render PUBLIC src)
   target_include_directories(bazuko_render SYSTEM PUBLIC third_party/glad/include)
-  target_link_libraries(bazuko_render PUBLIC bazuko_core glm::glm)
+  target_link_libraries(bazuko_render PUBLIC bazuko_gfx)
   target_compile_options(bazuko_render PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Wall -Wextra>)
 
   add_executable(bazuko src/main.cpp src/app/Game.cpp)
@@ -97,9 +113,9 @@ if(BAZUKO_BUILD_APP)
 endif()
 
 enable_testing()
-add_executable(bazuko_tests tests/main_test.cpp tests/core_test.cpp tests/data_test.cpp tests/sim_test.cpp tests/save_test.cpp tests/world_test.cpp tests/traffic_test.cpp tests/render_logic_test.cpp)
+add_executable(bazuko_tests tests/main_test.cpp tests/core_test.cpp tests/data_test.cpp tests/sim_test.cpp tests/save_test.cpp tests/world_test.cpp tests/traffic_test.cpp tests/render_logic_test.cpp tests/canvas_test.cpp tests/visual_test.cpp)
 target_compile_definitions(bazuko_tests PRIVATE BAZUKO_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
-target_link_libraries(bazuko_tests PRIVATE bazuko_core doctest::doctest)
+target_link_libraries(bazuko_tests PRIVATE bazuko_gfx doctest::doctest)
 add_test(NAME bazuko_tests COMMAND bazuko_tests)
 
 if(BAZUKO_BUILD_APP AND BAZUKO_GPU_TESTS)

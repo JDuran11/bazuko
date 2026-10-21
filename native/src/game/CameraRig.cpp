@@ -1,5 +1,7 @@
 #include "game/CameraRig.h"
 
+#include "world/RayBox.h"
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -14,25 +16,6 @@ constexpr double kLerpSpeed = 6;
 
 bool contains(const Aabb& b, const Vec3& p) {
     return p.x >= b.min.x && p.x <= b.max.x && p.y >= b.min.y && p.y <= b.max.y && p.z >= b.min.z && p.z <= b.max.z;
-}
-
-// Distancia a la que el rayo entra en la caja (origen fuera), o -1 si no la toca.
-double rayBox(const Vec3& o, const Vec3& d, const Aabb& b) {
-    double tmin = -std::numeric_limits<double>::infinity(), tmax = std::numeric_limits<double>::infinity();
-    const double os[3] = {o.x, o.y, o.z}, ds[3] = {d.x, d.y, d.z};
-    const double lo[3] = {b.min.x, b.min.y, b.min.z}, hi[3] = {b.max.x, b.max.y, b.max.z};
-    for (int i = 0; i < 3; ++i) {
-        if (ds[i] == 0) {
-            if (os[i] < lo[i] || os[i] > hi[i]) return -1;
-            continue;
-        }
-        double t0 = (lo[i] - os[i]) / ds[i], t1 = (hi[i] - os[i]) / ds[i];
-        if (t0 > t1) std::swap(t0, t1);
-        tmin = std::max(tmin, t0);
-        tmax = std::min(tmax, t1);
-    }
-    if (tmax < tmin || tmax < 0) return -1;
-    return tmin >= 0 ? tmin : tmax;
 }
 
 }  // namespace
@@ -84,7 +67,7 @@ void CameraRig::follow(const Vec3& target, double dt, const CollisionWorld* coll
                 const Aabb box{{raw.min.x - 0.2, raw.min.y - 0.2, raw.min.z - 0.2},
                                {raw.max.x + 0.2, raw.max.y + 0.2, raw.max.z + 0.2}};
                 if (contains(box, look)) { d = 0; break; }
-                const double t = rayBox(look, dir, box);
+                const double t = rayAabb(look, dir, box);
                 if (t >= 0) d = std::min(d, std::max(0.0, t - 0.05));
             }
         }

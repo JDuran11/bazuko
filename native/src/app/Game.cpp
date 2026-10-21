@@ -20,7 +20,9 @@
 #include "game/GameState.h"
 #include "game/Lighting.h"
 #include "game/PlayerMotor.h"
+#include "render/BuildingVisibility.h"
 #include "render/Renderer.h"
+#include "render/VisualWorld.h"
 #include "world/Bogota.h"
 #include "world/BusService.h"
 #include "world/PedestrianAgent.h"
@@ -97,6 +99,8 @@ struct Game::Impl {
     Input input;
     FrameMetrics metrics;
     std::unique_ptr<Renderer> renderer;
+    VisualWorld visual;
+    std::unique_ptr<BuildingVisibility> visibility;
 
     bool rightDrag = false;
 
@@ -119,7 +123,11 @@ struct Game::Impl {
         }
         const auto& spawn = city.reserved().spawn;
         motor.position = {spawn.x, city.groundHeightAt(spawn.x, spawn.z), spawn.z};
-        if (opts.posX > -1e8) motor.position = {opts.posX * 2, city.groundHeightAt(opts.posX * 2, opts.posZ * 2), opts.posZ * 2};
+        if (opts.posX > -1e8) {
+            const double mx = opts.atOriginal ? streetX().world(opts.posX) : opts.posX * kTileSize;
+            const double mz = opts.atOriginal ? streetZ().world(opts.posZ) : opts.posZ * kTileSize;
+            motor.position = {mx, city.groundHeightAt(mx, mz), mz};
+        }
         if (opts.isometric) rig.toggle();
         if (opts.yaw > -1e8) rig.yaw = opts.yaw;
         if (opts.hour >= 0) state.clock.hour = opts.hour;
@@ -198,6 +206,13 @@ struct Game::Impl {
         motor.position.y = city.groundHeightAt(motor.position.x, motor.position.z);
         rig.follow(motor.position, dt, &collisions);
 
+        // Cámara: posición y vector "derecha" horizontal, para los rayos de BuildingVisibility.
+        {
+            Vec3 f{rig.lookAt.x - rig.position.x, 0, rig.lookAt.z - rig.position.z};
+            const double len = std::max(1e-9, std::hypot(f.x, f.z));
+            visibility->update(dt, rig.mode == CameraMode::Isometric, rig.position, {-f.z / len, 0, f.x / len}, motor.position);
+        }
+
         std::vector<Vec3> people;
         people.reserve(agents.size());
         for (auto& a : agents) {
@@ -215,6 +230,15 @@ struct Game::Impl {
         f.aspect = static_cast<double>(w) / std::max(1, h);
         f.lighting = lightingAt(state.clock.hour);
         applyDesaturation(f.lighting, state.stats.getDesaturation());
+        f.night = state.clock.isNight();
+        f.houseSeparate = &visibility->separate();
+        for (size_t h = 0; h < visual.houses.size(); ++h) {
+            if (!visibility->separate()[visual.houses[h].id]) continue;
+            for (int part = 0; part < BuildingVisibility::kParts; ++part) {
+                const double o = visibility->opacity(h, part);
+                if (o > 0) f.parts.push_back({visual.houses[h].id, part, static_cast<float>(o)});
+            }
+        }
 
         personBoxes(f.boxes, motor.position, motor.rotationY, 0, 1.0f);
 
@@ -222,9 +246,6 @@ struct Game::Impl {
             personBoxes(f.boxes, agents[i].position, agents[i].rotationY, static_cast<int>(i * 7 + 3), 0.95f);
 
         for (const Vendor& v : city.vendors()) {
-            const float x = static_cast<float>(v.x), z = static_cast<float>(v.z);
-            const Rgb stall = rgbFromHex(v.kind == VendorKind::Chaza ? 0x3f7a3a : 0xe0962b);
-            f.boxes.push_back({{x, city.groundHeightAt(v.x, v.z), z}, static_cast<float>(v.rotY), {0, 0.7f, 0}, {1.8f, 1.4f, 0.9f}, stall});
             const Vec3 back{v.x - std::sin(v.rotY) * 0.9, city.groundHeightAt(v.x, v.z), v.z - std::cos(v.rotY) * 0.9};
             personBoxes(f.boxes, back, v.rotY, static_cast<int>(v.x), 0.95f);
         }
@@ -257,7 +278,9 @@ struct Game::Impl {
         int pw, ph;
         SDL_GetWindowSizeInPixels(window, &pw, &ph);
         renderer->resize(pw, ph);
-        renderer->uploadWorld(city);
+        visual = buildVisualWorld(city, rng);
+        visibility = std::make_unique<BuildingVisibility>(visual.houses);
+        renderer->uploadWorld(visual);
 
         const bool shot = !opts.screenshot.empty();
         Uint64 last = SDL_GetPerformanceCounter();
@@ -295,14 +318,15 @@ struct Game::Impl {
                 SDL_SetWindowTitle(window, title);
             }
             if (shot && frame >= opts.frames) {
+                stats = renderer->render(buildFrame(pw, ph));
                 // Se vuelve a dibujar sin intercambiar para leer el framebuffer trasero.
                 renderer->render(buildFrame(pw, ph));
                 if (!savePng(opts.screenshot)) {
                     std::fprintf(stderr, "no se pudo escribir %s\n", opts.screenshot.c_str());
                     return 1;
                 }
-                std::printf("captura: %s (%dx%d, %d dibujos, %zu triángulos)\n", opts.screenshot.c_str(), pw, ph,
-                            stats.drawCalls, stats.triangles);
+                std::printf("captura: %s (%dx%d, %d dibujos, %zu triángulos, %d lotes visibles / %d descartados)\n", opts.screenshot.c_str(), pw, ph,
+                            stats.drawCalls, stats.triangles, stats.batchesVisible, stats.batchesCulled);
                 break;
             }
         }

@@ -1,8 +1,8 @@
 #include "render/Gpu.h"
 
+#include <algorithm>
 #include <stdexcept>
 #include <utility>
-#include <vector>
 
 namespace bazuko {
 
@@ -25,6 +25,9 @@ GLuint compile(GLenum type, const std::string& src) {
     }
     return s;
 }
+
+constexpr GLenum kTextureMaxAnisotropy = 0x84FE;      // GL_TEXTURE_MAX_ANISOTROPY (core en 4.6)
+constexpr GLenum kMaxTextureMaxAnisotropy = 0x84FF;
 
 }  // namespace
 
@@ -63,10 +66,12 @@ GpuMesh::GpuMesh(const float* vertices, size_t floatCount, const unsigned* indic
     glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(floatCount * sizeof(float)), vertices, GL_STATIC_DRAW);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo_);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, static_cast<GLsizeiptr>(indexCount * sizeof(unsigned)), indices, GL_STATIC_DRAW);
-    const GLsizei stride = 9 * sizeof(float);
-    for (GLuint i = 0; i < 3; ++i) {
+    const GLsizei stride = 12 * sizeof(float);
+    // posición, normal, color, uv, id de casa
+    const struct { GLint size; size_t offset; } attrs[5] = {{3, 0}, {3, 3}, {3, 6}, {2, 9}, {1, 11}};
+    for (GLuint i = 0; i < 5; ++i) {
         glEnableVertexAttribArray(i);
-        glVertexAttribPointer(i, 3, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(i * 3 * sizeof(float)));
+        glVertexAttribPointer(i, attrs[i].size, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(attrs[i].offset * sizeof(float)));
     }
     glBindVertexArray(0);
 }
@@ -85,5 +90,56 @@ void GpuMesh::draw() const {
     glBindVertexArray(vao_);
     glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(indexCount_), GL_UNSIGNED_INT, nullptr);
 }
+
+GpuTexture::GpuTexture(const Image& img) {
+    // La fila 0 de la imagen es el borde superior; GL espera v = 0 abajo, así que se invierten las filas.
+    std::vector<std::uint8_t> flipped(img.rgba.size());
+    const size_t row = static_cast<size_t>(img.width) * 4;
+    for (int y = 0; y < img.height; ++y) std::copy_n(img.rgba.data() + (img.height - 1 - y) * row, row, flipped.data() + y * row);
+
+    glGenTextures(1, &id_);
+    glBindTexture(GL_TEXTURE_2D, id_);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexImage2D(GL_TEXTURE_2D, 0, img.srgb ? GL_SRGB8_ALPHA8 : GL_RGBA8, img.width, img.height, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+                 flipped.data());
+    glGenerateMipmap(GL_TEXTURE_2D);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    const GLint wrap = img.repeat ? GL_REPEAT : GL_CLAMP_TO_EDGE;
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap);
+    GLfloat maxAniso = 0;
+    glGetFloatv(kMaxTextureMaxAnisotropy, &maxAniso);
+    if (glGetError() == GL_NO_ERROR && maxAniso > 1) glTexParameterf(GL_TEXTURE_2D, kTextureMaxAnisotropy, std::min(8.0f, maxAniso));
+}
+
+GpuTexture::GpuTexture(GpuTexture&& o) noexcept : id_(std::exchange(o.id_, 0)) {}
+
+GpuTexture::~GpuTexture() {
+    if (id_) glDeleteTextures(1, &id_);
+}
+
+void GpuTexture::bind(GLuint unit) const {
+    glActiveTexture(GL_TEXTURE0 + unit);
+    glBindTexture(GL_TEXTURE_2D, id_);
+}
+
+GpuUintBuffer::~GpuUintBuffer() {
+    if (id_) glDeleteBuffers(1, &id_);
+}
+
+void GpuUintBuffer::upload(const std::vector<std::uint8_t>& values) {
+    std::vector<GLuint> data(values.begin(), values.end());
+    if (!id_) glGenBuffers(1, &id_);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, id_);
+    if (data.size() > capacity_) {
+        glBufferData(GL_SHADER_STORAGE_BUFFER, static_cast<GLsizeiptr>(data.size() * sizeof(GLuint)), data.data(), GL_DYNAMIC_DRAW);
+        capacity_ = data.size();
+    } else {
+        glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, static_cast<GLsizeiptr>(data.size() * sizeof(GLuint)), data.data());
+    }
+}
+
+void GpuUintBuffer::bind(GLuint binding) const { glBindBufferBase(GL_SHADER_STORAGE_BUFFER, binding, id_); }
 
 }  // namespace bazuko
