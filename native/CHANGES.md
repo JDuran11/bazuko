@@ -88,5 +88,23 @@ Diferencias respecto al web:
 - La carga de los 72 personajes tarda ~5 s al arrancar; la pantalla de carga con progreso llega en la fase 9.
 
 Pendientes de fases siguientes (ya identificados):
-- Fase 8: `sortValueMult` sin efecto (se aplicará al valor de lo seleccionado), aviso al perder ítems por inventario lleno, multiplicador por higiene baja en la probabilidad de enfermar (`StatsSystem::getDiseaseChanceMultiplier` ya existe pero nadie lo usa en la versión web), `CraftingStation` sin interacción, `player.speedMult` muerto.
 - Fase 10: desaturación por ánimo bajo (`getDesaturation` ya está portado).
+
+## Fase 8 · entidades e interacción
+Lógica (`game/Entities`, `Interaction`, `Places`, `Money`; sin GL ni SDL, probada en `game_test.cpp`):
+- **Población**: 42 bolsas (14 · escala) desde la rejilla de spawn y 15 carros (5 · escala) en puestos de parqueo separados > 8 m (30 % taxis, 8 pinturas). La basura revive a los 20 s en otro punto válido; los carros a los 40 s.
+- **Interacción**: objetivo más cercano a < 1,8 m; E recoge/roba/abre menús, mantener Q 1,5 s selecciona la bolsa (más objetos), F boost (−10 energía, drena salud, 8 s), B/L pedir limosna (enfriamiento de 4 s en tiempo de juego), dealer (solo compra de noche, Q abre su tienda).
+- **Correcciones**:
+  - `sortValueMult` (Selección Experta) ahora multiplica las tiradas de lo seleccionado.
+  - La higiene baja aumenta la probabilidad de enfermar al recoger (`getDiseaseChanceMultiplier`); Piel Dura y Selección Experta la reducen.
+  - Si la mochila está llena se avisa de lo que se deja en el suelo (antes se perdía en silencio).
+  - La mesa de crafteo ahora es interactuable (`EvOpenCrafting`).
+  - La caja de colisión de la tienda queda alineada con el modelo (el web la desplazaba −0,7 en z) y la fachada queda junto al punto de interacción.
+- **Lugares**: recicladora (×1,2 con boost, ×origen), tienda (dinero, peso, costal único), cambuche por piezas (la base primero) y crafteo con XP.
+
+Visual (`app/EntityModels`, `Renderer::uploadMesh` + `MeshDraw`): todo son mallas fusionadas con color de vértice y tinte (bolsa con anillo ámbar, aura dorada con boost y barra de selección; carros con pintura teñida y taxi con letrero; dealer de noche; tienda con toldo; mesa de crafteo; cambuche por piezas; bus articulado que se desvanece; tráfico con los mismos carros). Los marcadores y el bus usan mezcla alfa sin escribir profundidad.
+
+Diferencias respecto al web:
+- Sin texto sobre los carteles de la tienda ni la recicladora (la bodega ya existe en el mundo; solo lleva un anillo verde marcador, igual que el cambuche).
+- Los menús (recicladora, tienda, cambuche, dealer) llegan en la fase 9: de momento los eventos se imprimen en consola, E en la recicladora vende todo y E en el cambuche duerme si hay base.
+- La animación de acciones (`buscar`, `pedir`...) se envía al animador pero cae en idle porque solo existen los clips idle/walk/run.

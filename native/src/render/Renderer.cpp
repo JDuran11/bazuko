@@ -429,6 +429,13 @@ void Renderer::renderShadowPass(const FrameInput& f, const ShadowFrame& shadow, 
         ++stats.shadowDrawCalls;
         stats.triangles += unitBox_->triangles();
     }
+    for (const MeshDraw& d : f.meshes) {
+        if (!d.castShadow || d.alpha < 0.99f || d.mesh < 0 || d.mesh >= static_cast<int>(dynMeshes_.size())) continue;
+        depthShader_->set("uModel", d.model);
+        dynMeshes_[d.mesh].draw();
+        ++stats.shadowDrawCalls;
+        stats.triangles += dynMeshes_[d.mesh].triangles();
+    }
     if (!f.skinned.empty()) {
         skinnedDepthShader_->use();
         skinnedDepthShader_->set("uLightViewProj", shadow.viewProj);
@@ -464,6 +471,29 @@ void Renderer::drawBoxes(const FrameInput& f, bool onlySilhouette, RenderStats& 
         ++stats.drawCalls;
         stats.triangles += unitBox_->triangles();
     }
+}
+
+int Renderer::uploadMesh(const MeshBuilder& mesh) {
+    dynMeshes_.emplace_back(mesh.vertices().data(), mesh.vertices().size(), mesh.indices().data(), mesh.indices().size());
+    return static_cast<int>(dynMeshes_.size()) - 1;
+}
+
+void Renderer::drawMeshes(const FrameInput& f, bool blended, RenderStats& stats) {
+    for (const MeshDraw& d : f.meshes) {
+        if (d.mesh < 0 || d.mesh >= static_cast<int>(dynMeshes_.size()) || (d.alpha < 1.0f) != blended || d.alpha <= 0) continue;
+        MaterialDef m;
+        m.unlit = d.unlit;
+        m.doubleSided = d.doubleSided;
+        m.tint = d.tint;
+        bindMaterial(m, f.night, d.alpha);
+        shader_->set("uModel", d.model);
+        if (d.noDepthTest) glDisable(GL_DEPTH_TEST);
+        dynMeshes_[d.mesh].draw();
+        if (d.noDepthTest) glEnable(GL_DEPTH_TEST);
+        ++stats.drawCalls;
+        stats.triangles += dynMeshes_[d.mesh].triangles();
+    }
+    shader_->set("uModel", glm::mat4(1.0f));
 }
 
 void Renderer::drawScene(const FrameInput& f, const ShadowFrame* shadow, int width, int height, RenderStats& stats) {
@@ -550,6 +580,7 @@ void Renderer::drawScene(const FrameInput& f, const ShadowFrame* shadow, int wid
     MaterialDef plain;
     bindMaterial(plain, f.night, 1.0f);
     drawBoxes(f, false, stats);
+    drawMeshes(f, false, stats);
     shader_->set("uModel", glm::mat4(1.0f));
 
     // Personajes opacos y con recorte alfa (pelo).
@@ -593,6 +624,14 @@ void Renderer::drawScene(const FrameInput& f, const ShadowFrame* shadow, int wid
     glDepthMask(GL_FALSE);
     for (const PartDraw& p : f.parts)
         if (p.opacity < 1.0f && p.opacity > 0) drawPart(p, p.opacity);
+    glDepthMask(GL_TRUE);
+    glDisable(GL_BLEND);
+
+    // Mallas dinámicas con transparencia (aura, anillos, bus que se desvanece).
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDepthMask(GL_FALSE);
+    drawMeshes(f, true, stats);
     glDepthMask(GL_TRUE);
     glDisable(GL_BLEND);
 

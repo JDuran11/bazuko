@@ -176,6 +176,20 @@ void MeshBuilder::disc(float r, int seg, const Rgb& color) {
     orient(firstIndex);
 }
 
+void MeshBuilder::ring(float inner, float outer, int seg, const Rgb& color) {
+    const size_t firstIndex = indices_.size();
+    for (int i = 0; i < seg; ++i) {
+        const float a0 = 2 * static_cast<float>(kPi) * i / seg, a1 = 2 * static_cast<float>(kPi) * (i + 1) / seg;
+        const auto base = static_cast<std::uint32_t>(vertexCount());
+        vertex({std::cos(a0) * inner, 0, -std::sin(a0) * inner}, {0, 1, 0}, color, {0, 0});
+        vertex({std::cos(a0) * outer, 0, -std::sin(a0) * outer}, {0, 1, 0}, color, {1, 0});
+        vertex({std::cos(a1) * outer, 0, -std::sin(a1) * outer}, {0, 1, 0}, color, {1, 1});
+        vertex({std::cos(a1) * inner, 0, -std::sin(a1) * inner}, {0, 1, 0}, color, {0, 1});
+        for (std::uint32_t k : {0u, 2u, 1u, 0u, 3u, 2u}) indices_.push_back(base + k);
+    }
+    orient(firstIndex);
+}
+
 void MeshBuilder::sphere(float radius, int detail, const Rgb& color, bool flat) {
     const size_t firstIndex = indices_.size();
     const float t = (1 + std::sqrt(5.0f)) / 2;

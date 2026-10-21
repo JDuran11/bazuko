@@ -44,6 +44,8 @@ public:
     void capsule(float radius, float length, int capSegments, int radialSegments, const Rgb& color);
     // TorusGeometry: anillo en el plano XY (eje Z).
     void torus(float radius, float tube, int radialSegments, int tubularSegments, const Rgb& color);
+    // Anillo plano horizontal (mirando hacia +y) entre dos radios.
+    void ring(float inner, float outer, int segments, const Rgb& color);
     // Disco horizontal mirando hacia +y.
     void disc(float radius, int segments, const Rgb& color);
 

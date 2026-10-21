@@ -59,6 +59,9 @@ add_library(bazuko_core STATIC
   src/game/systems/CraftingSystem.cpp
   src/game/systems/Survival.cpp
   src/game/systems/SaveSystem.cpp
+  src/game/Entities.cpp
+  src/game/Interaction.cpp
+  src/game/Places.cpp
   src/world/StreetLayout.cpp
   src/world/TileMap.cpp
   src/world/CityLayout.cpp
@@ -126,7 +129,7 @@ if(BAZUKO_BUILD_APP)
   target_link_libraries(bazuko_render PUBLIC bazuko_gfx)
   target_compile_options(bazuko_render PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Wall -Wextra>)
 
-  add_executable(bazuko src/main.cpp src/app/Game.cpp)
+  add_executable(bazuko src/main.cpp src/app/Game.cpp src/app/EntityModels.cpp)
   target_include_directories(bazuko SYSTEM PRIVATE third_party/stb)
   target_compile_definitions(bazuko PRIVATE BAZUKO_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
   target_link_libraries(bazuko PRIVATE bazuko_render SDL3::SDL3)
@@ -134,7 +137,7 @@ if(BAZUKO_BUILD_APP)
 endif()
 
 enable_testing()
-add_executable(bazuko_tests tests/main_test.cpp tests/core_test.cpp tests/data_test.cpp tests/sim_test.cpp tests/save_test.cpp tests/world_test.cpp tests/traffic_test.cpp tests/render_logic_test.cpp tests/canvas_test.cpp tests/visual_test.cpp tests/lights_test.cpp tests/gltf_test.cpp tests/animation_test.cpp tests/character_test.cpp tests/procedural_test.cpp)
+add_executable(bazuko_tests tests/main_test.cpp tests/core_test.cpp tests/data_test.cpp tests/sim_test.cpp tests/save_test.cpp tests/world_test.cpp tests/traffic_test.cpp tests/render_logic_test.cpp tests/canvas_test.cpp tests/visual_test.cpp tests/lights_test.cpp tests/gltf_test.cpp tests/animation_test.cpp tests/character_test.cpp tests/procedural_test.cpp tests/game_test.cpp)
 target_compile_definitions(bazuko_tests PRIVATE BAZUKO_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
 target_link_libraries(bazuko_tests PRIVATE bazuko_gfx doctest::doctest)
 add_test(NAME bazuko_tests COMMAND bazuko_tests)

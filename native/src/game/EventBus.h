@@ -20,9 +20,33 @@ struct EvSleepEnd { int hours; };
 struct EvSleepFail { std::string reason; };
 struct EvToast { std::string text, type; };  // type: info, warn, rare, sell, death
 struct EvDeath {};
+// Sonidos y acciones
+struct EvSound { std::string name; };
+struct EvPlayerAction { std::string name; double seconds; };  // animación breve del jugador
+// Cosecha, robo y comercio
+struct EvPickup { std::vector<std::string> added; bool rare; bool sorted; };
+struct EvSteal { std::vector<std::string> added; bool caught; };
+struct EvStealCaught {};
+struct EvSell { int earned; };
+struct EvSubstanceSell { int earned; };
+struct EvSubstanceFail { std::string reason; };
+struct EvSubstanceBuy { std::string name; int cost; };
+struct EvSubstanceBuyFail { std::string reason; int cost; };
+struct EvBegResult { bool success; std::string reason, item, message; int money; bool rare; };
+struct EvBegCooldown { int waitSec; };
+struct EvBegFail { std::string reason; };
+// Aperturas de menús
+struct EvOpenRecycler {};
+struct EvOpenShop { int vendor; };  // -1 = la tienda La Esquinita; si no, índice del vendedor ambulante
+struct EvOpenCambuche {};
+struct EvOpenCrafting {};
+struct EvDealerToggle {};
 
 using GameEvent = std::variant<EvWithdrawal, EvLevelUp, EvDisease, EvDiseaseCured, EvCraft,
-                               EvTalentUnlock, EvSleepStart, EvSleepEnd, EvSleepFail, EvToast, EvDeath>;
+                               EvTalentUnlock, EvSleepStart, EvSleepEnd, EvSleepFail, EvToast, EvDeath, EvSound,
+                               EvPlayerAction, EvPickup, EvSteal, EvStealCaught, EvSell, EvSubstanceSell, EvSubstanceFail,
+                               EvSubstanceBuy, EvSubstanceBuyFail, EvBegResult, EvBegCooldown, EvBegFail, EvOpenRecycler,
+                               EvOpenShop, EvOpenCambuche, EvOpenCrafting, EvDealerToggle>;
 
 class EventBus {
 public:

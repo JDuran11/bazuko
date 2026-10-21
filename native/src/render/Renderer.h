@@ -35,6 +35,19 @@ struct PartDraw {
     float opacity;
 };
 
+// Malla dinámica subida con Renderer::uploadMesh (bolsas, carros, tienda, bus...). El color de cada
+// vértice se multiplica por `tint`.
+struct MeshDraw {
+    int mesh = -1;
+    glm::mat4 model{1.0f};
+    Rgb tint{1, 1, 1};
+    float alpha = 1;  // < 1: se mezcla sin escribir profundidad
+    bool unlit = false;
+    bool castShadow = true;
+    bool doubleSided = false;
+    bool noDepthTest = false;  // anillos y marcadores que siempre se ven
+};
+
 struct FrameInput {
     const CameraRig* camera = nullptr;
     double aspect = 16.0 / 9;
@@ -42,6 +55,7 @@ struct FrameInput {
     bool night = false;
     bool cullStatics = true;
     std::vector<DynBox> boxes;
+    std::vector<MeshDraw> meshes;
     // Por id de casa (índice 0 = ninguna): 1 si sus partes altas se dibujan por separado.
     const std::vector<std::uint8_t>* houseSeparate = nullptr;
     std::vector<PartDraw> parts;
@@ -72,6 +86,9 @@ public:
     int uploadTexture(const Image& image) override;
     int uploadSkinnedMesh(const std::vector<float>& vertices, const std::vector<std::uint32_t>& indices) override;
 
+    // Sube una malla suelta y devuelve su índice para MeshDraw::mesh.
+    int uploadMesh(const MeshBuilder& mesh);
+
     // Sube texturas, materiales y mallas del distrito a la GPU.
     void uploadWorld(const VisualWorld& world);
     void resize(int width, int height);
@@ -96,12 +113,14 @@ private:
     void renderShadowPass(const FrameInput& f, const ShadowFrame& shadow, RenderStats& stats);
     void drawScene(const FrameInput& f, const ShadowFrame* shadow, int width, int height, RenderStats& stats);
     void drawBoxes(const FrameInput& f, bool onlySilhouette, RenderStats& stats);
+    void drawMeshes(const FrameInput& f, bool blended, RenderStats& stats);
     void ensureScaledTargets(int w, int h);
     void drawSkinned(const FrameInput& f, SkinPass pass, RenderStats& stats);
 
     std::unique_ptr<Shader> shader_, depthShader_, blitShader_, skinnedShader_, skinnedDepthShader_;
     Shader* cur_ = nullptr;  // programa de la pasada actual (bindMaterial)
     std::vector<GpuSkinnedMesh> skinMeshes_;
+    std::vector<GpuMesh> dynMeshes_;
     std::vector<GpuTexture> charTextures_;
     GLuint emptyVao_ = 0;
     std::unique_ptr<GpuMesh> unitBox_, haloQuad_;

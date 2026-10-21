@@ -21,6 +21,11 @@
 #include "core/FrameMetrics.h"
 #include "core/Input.h"
 #include "core/Rng.h"
+#include "app/EntityModels.h"
+#include "game/Entities.h"
+#include "game/Interaction.h"
+#include "game/Places.h"
+#include "game/systems/Survival.h"
 #include "game/CameraRig.h"
 #include "game/GameState.h"
 #include "game/Lighting.h"
@@ -105,6 +110,11 @@ struct Game::Impl {
     VisualWorld visual;
     std::unique_ptr<BuildingVisibility> visibility;
     std::unique_ptr<LocalLights> lights;
+    Entities entities;
+    std::unique_ptr<Interaction> interaction;
+    std::unique_ptr<EntityModels> models;
+    double playerActionLeft = 0;
+    std::string playerAction;
 
     // Personajes reales: el jugador, la gente de la calle y los vendedores. Cada peatón guarda su versión
     // liviana y la completa; se muestra una u otra según la distancia (con histéresis).
@@ -146,6 +156,10 @@ struct Game::Impl {
             ao.groundHeight = [this](double x, double z) { return nav.groundHeightAt(x, z); };
             agents.emplace_back(p, ao, rng);
         }
+        entities = spawnEntities(city, rng);
+        interaction = std::make_unique<Interaction>(state, entities, city, rng);
+        // Caja de colisión de la tienda (su fachada queda junto al punto de interacción).
+        collisions.add({entities.shop.position.x, 0, entities.shop.position.z - EntityModels::kShopBack}, {5.2, 3.2, 3.6});
         const auto& spawn = city.reserved().spawn;
         motor.position = {spawn.x, city.groundHeightAt(spawn.x, spawn.z), spawn.z};
         if (opts.posX > -1e8) {
@@ -248,6 +262,36 @@ struct Game::Impl {
         return p;
     }
 
+    // Hasta que exista la interfaz (fase 9) los eventos del juego se muestran en la consola.
+    void drainEvents(double dt) {
+        playerActionLeft = std::max(0.0, playerActionLeft - dt);
+        for (const GameEvent& ev : state.bus.drain()) {
+            if (const auto* a = std::get_if<EvPlayerAction>(&ev)) {
+                playerAction = a->name;
+                playerActionLeft = a->seconds;
+            } else if (const auto* t = std::get_if<EvToast>(&ev)) {
+                std::printf("[%s] %s\n", t->type.c_str(), t->text.c_str());
+            } else if (const auto* r = std::get_if<EvBegResult>(&ev)) {
+                std::printf("[mendigar] %s\n", r->message.c_str());
+            } else if (const auto* p = std::get_if<EvPickup>(&ev)) {
+                std::printf("[basura] %zu objetos%s%s\n", p->added.size(), p->rare ? " (¡raro!)" : "", p->sorted ? " (seleccionada)" : "");
+            } else if (std::holds_alternative<EvOpenRecycler>(ev)) {
+                std::printf("[recicladora] vendes %d\n", sellToRecycler(state, interaction->boostActive() ? 1.2 : 1.0));
+            } else if (std::holds_alternative<EvOpenCambuche>(ev)) {
+                if (state.hasBuilt("base")) {
+                    const SleepResult r = sleep(state, rng);
+                    std::printf("[cambuche] dormir: %s %.1f h\n", r.ok ? "ok" : "no", r.hours);
+                }
+            }
+        }
+        if (isDead(state)) {
+            respawn(state);
+            motor.position = {entities.cambuche.position.x, city.groundHeightAt(entities.cambuche.position.x, entities.cambuche.position.z),
+                              entities.cambuche.position.z + 2};
+            std::printf("[muerte] reapareces en el cambuche\n");
+        }
+    }
+
     void update(double dt) {
         if (input.consumePress(Key::Escape)) SDL_PushEvent(new SDL_Event{.type = SDL_EVENT_QUIT});
         if (input.consumePress(Key::V)) {
@@ -258,6 +302,9 @@ struct Game::Impl {
                        (input.isDown(Key::ArrowDown) ? 1 : 0) - (input.isDown(Key::ArrowUp) ? 1 : 0));
 
         state.update(dt);
+        interaction->update(dt, input, motor.position);
+        updateEntities(entities, city, rng, dt);
+        drainEvents(dt);
         if (opts.hour >= 0) state.clock.hour = opts.hour;  // hora fija para capturas
 
         double fx, fz;
@@ -289,7 +336,7 @@ struct Game::Impl {
             pin.dirt = std::max(0.0, (40 - state.stats.higiene) / 40);
             playerProc->update(dt, pin);
         } else {
-            playerChar->update(dt, {motor.speed / kRealisticScale, motor.state == MoveState::Run, {}});
+            playerChar->update(dt, {motor.speed / kRealisticScale, motor.state == MoveState::Run, playerActionLeft > 0 ? playerAction : std::string()});
         }
         {
             const CameraMatrices cm = cameraMatrices(rig, aspect);
@@ -345,19 +392,11 @@ struct Game::Impl {
             (vendors[i].showFull ? *vendors[i].full : *vendors[i].lod).collect(characterModel(back, v.rotY), false, f.skinned);
         }
 
-        static const std::uint32_t paints[] = {0x2f6fb0, 0xc0392b, 0x7d8288, 0xe8e3d6, 0x1f1f1f, 0x3f7a3a, 0x7a4fa0, 0x0f6b6b};
-        int idx = 0;
-        for (const TrafficVehicle& v : traffic.vehicles()) {
-            const bool taxi = idx % 4 == 0;
-            const Rgb paint = rgbFromHex(taxi ? 0xf2c300 : paints[idx % 8]);
-            const glm::vec3 pos(static_cast<float>(v.position.x), 0, static_cast<float>(v.position.z));
-            f.boxes.push_back({pos, static_cast<float>(v.rotationY), {0, 0.55f, 0}, {4.3f, 0.9f, 1.76f}, paint});
-            f.boxes.push_back({pos, static_cast<float>(v.rotationY), {-0.25f, 1.25f, 0}, {2.2f, 0.6f, 1.55f}, rgbFromHex(0x9fb4c4)});
-            ++idx;
-        }
-        if (bus.opacity() > 0)
-            f.boxes.push_back({{static_cast<float>(bus.position.x), 0, static_cast<float>(bus.position.z)}, 0,
-                               {0, 1.7f, 0}, {static_cast<float>(kBusWidth), 3.0f, static_cast<float>(kBusLength)}, rgbFromHex(0xb3232b)});
+        InteractionView view;
+        view.boost = interaction->boostActive();
+        view.sortTime = data.c("SORT_BASE_TIME");
+        models->collect(entities, state, motor.position, simTime, view, f.meshes);
+        models->collectTraffic(traffic, bus, f.meshes);
         return f;
     }
 
@@ -390,6 +429,7 @@ struct Game::Impl {
             for (size_t i = 0; i < city.vendors().size(); ++i) vendors.push_back(makePerson(randomStreetLook(catalog, data.look, rng, false)));
         }
         renderer->uploadWorld(visual);
+        models = std::make_unique<EntityModels>(*renderer);
 
         const bool shot = !opts.screenshot.empty();
         Uint64 last = SDL_GetPerformanceCounter();
