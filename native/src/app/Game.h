@@ -14,6 +14,7 @@ struct Options {
     double posX = -1e9, posZ = -1e9;  // posición inicial en tiles (opcional)
     bool atOriginal = false;          // posX/posZ en la rejilla original del centro (WX/WZ), no en tiles expandidos
     double yaw = -1e9;
+    double renderScale = 1;  // fracción de la ventana a la que se dibuja la escena (pruebas de resolución adaptativa)
     unsigned seed = 0;       // 0 = aleatoria
     bool showHelp = false;
 };

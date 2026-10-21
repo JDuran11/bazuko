@@ -87,7 +87,8 @@ public:
 
     // --- props (VisualProps.cpp) ---
     double groundAt(double x, double z) const { return city.groundHeightAt(x, z); }
-    void addLight(const Vec3& p, std::uint32_t hex, double intensity, double distance, double decay, bool nightOnly, bool flicker);
+    void addLight(const Vec3& p, std::uint32_t hex, double intensity, double distance, double decay, bool nightOnly, bool flicker,
+                  double amp1 = 0, double f1 = 0, double amp2 = 0, double f2 = 0);
 
     // Texturas compartidas del distrito.
     int asphaltTex = -1, sidewalkTex = -1, dirtTex = -1, concreteTex = -1, brickTex = -1, slabTex = -1, tilesTex = -1,

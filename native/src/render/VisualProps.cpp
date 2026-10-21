@@ -81,7 +81,7 @@ void fireBarrel(VisualBuilder& b, double x, double z) {
     for (int i = 0; i < 3; ++i)
         c.cone(b.color(flames[i], true, false, 2.5), {static_cast<float>(b.rand(-0.08, 0.08)), 1.0f, static_cast<float>(b.rand(-0.08, 0.08))},
                0.16f - i * 0.03f, 0.5f, 7);
-    b.addLight({x, c.at.y + 1.4, z}, 0xff8a2a, 6, 9, 1.6, false, true);
+    b.addLight({x, c.at.y + 1.4, z}, 0xff8a2a, 5, 9, 1.6, false, true, 1.2, 17, 0.8, 31);
 }
 
 void zorra(VisualBuilder& b, double x, double z, float rot) {
@@ -129,7 +129,7 @@ void fritanga(VisualBuilder& b, Ctx c) {
         c.sphere(b.color(i % 2 ? 0xc8902a : 0x7a3a1a), {-0.5f + i * 0.15f, 0.92f, static_cast<float>(b.rand(-0.15, 0.15))}, 0.06f, 1, true);
     umbrella(b, c.child(T(0, 0, 0.1f)), 0x2e7d32, 0xecf0f1);
     const vec3 lamp = vec3(c.base * glm::vec4(0.9f, 1.1f, 0, 1));
-    b.addLight({lamp.x, lamp.y, lamp.z}, 0xff6a2a, 2.5, 5, 2, false, true);
+    b.addLight({lamp.x, lamp.y, lamp.z}, 0xff6a2a, 2.2, 5, 2, false, true, 0.4, 9, 0, 0);
 }
 
 void shack(VisualBuilder& b, double x, double z, float rot) {

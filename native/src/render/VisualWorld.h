@@ -26,6 +26,7 @@ struct MaterialDef {
     bool noFog = false;          // cerros lejanos
     bool doubleSided = false;
     bool polygonOffset = false;  // marcas viales sobre el asfalto
+    bool castShadow = true;      // suelo, marcas y carteles no proyectan sombra
 };
 
 // Mallas de un material dentro de un sector de 32 m.
@@ -57,6 +58,11 @@ struct LightSource {
     double intensity = 1, distance = 0, decay = 2;
     bool nightOnly = false;  // faroles: solo de noche
     bool flicker = false;    // fuego
+    // Parpadeo: intensidad = base + amp1 * sin(t * f1) + amp2 * sin(t * f2)
+    double amp1 = 0, f1 = 0, amp2 = 0, f2 = 0;
+
+    // Intensidad en el instante t (segundos) con el día o la noche dados.
+    double intensityAt(double t, bool night) const;
 };
 
 // Todo lo visual del distrito en CPU: texturas, materiales, mallas por sector y casas.

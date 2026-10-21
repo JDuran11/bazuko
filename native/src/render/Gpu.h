@@ -24,6 +24,9 @@ public:
     void set(const char* name, float v) const { glUniform1f(uniform(name), v); }
     void set(const char* name, int v) const { glUniform1i(uniform(name), v); }
     void set(const char* name, const glm::vec3& v) const { glUniform3fv(uniform(name), 1, &v.x); }
+    void set(const char* name, const glm::vec2& v) const { glUniform2fv(uniform(name), 1, &v.x); }
+    void setArray(const char* name, const glm::vec3* v, int count) const { glUniform3fv(uniform(name), count, &v[0].x); }
+    void setArray(const char* name, const glm::vec2* v, int count) const { glUniform2fv(uniform(name), count, &v[0].x); }
     void set(const char* name, const glm::mat4& m) const { glUniformMatrix4fv(uniform(name), 1, GL_FALSE, &m[0][0]); }
 
 private:
@@ -76,6 +79,43 @@ public:
 private:
     GLuint id_ = 0;
     size_t capacity_ = 0;
+};
+
+// Mapa de sombras: textura de profundidad con comparación por hardware (PCF bilineal).
+class DepthTarget {
+public:
+    explicit DepthTarget(int size);
+    ~DepthTarget();
+    DepthTarget(const DepthTarget&) = delete;
+    DepthTarget& operator=(const DepthTarget&) = delete;
+
+    void bind() const;
+    void bindTexture(GLuint unit) const;
+    int size() const { return size_; }
+
+private:
+    GLuint fbo_ = 0, tex_ = 0;
+    int size_;
+};
+
+// Color + profundidad fuera de pantalla, opcionalmente multimuestreado (resolución adaptativa).
+class ColorTarget {
+public:
+    ColorTarget(int width, int height, int samples, bool asTexture = false);
+    ~ColorTarget();
+    ColorTarget(const ColorTarget&) = delete;
+    ColorTarget& operator=(const ColorTarget&) = delete;
+
+    void bind() const { glBindFramebuffer(GL_FRAMEBUFFER, fbo_); }
+    GLuint fbo() const { return fbo_; }
+    // Con `asTexture` (solo sin multimuestreo) el color es una textura que se puede muestrear.
+    GLuint colorTexture() const { return colorTex_; }
+    int width() const { return w_; }
+    int height() const { return h_; }
+
+private:
+    GLuint fbo_ = 0, color_ = 0, colorTex_ = 0, depth_ = 0;
+    int w_, h_;
 };
 
 }  // namespace bazuko

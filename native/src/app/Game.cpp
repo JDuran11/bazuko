@@ -12,6 +12,7 @@
 #include <memory>
 #include <stdexcept>
 
+#include "core/AdaptiveResolution.h"
 #include "core/FrameLoop.h"
 #include "core/FrameMetrics.h"
 #include "core/Input.h"
@@ -21,6 +22,7 @@
 #include "game/Lighting.h"
 #include "game/PlayerMotor.h"
 #include "render/BuildingVisibility.h"
+#include "render/LocalLights.h"
 #include "render/Renderer.h"
 #include "render/VisualWorld.h"
 #include "world/Bogota.h"
@@ -62,14 +64,14 @@ Key mapKey(SDL_Scancode sc, bool& ok) {
 }
 
 // Personaje de cajas (se sustituye por los modelos reales en la fase 7).
-void personBoxes(std::vector<DynBox>& out, const Vec3& pos, double rotY, int variant, float scale) {
+void personBoxes(std::vector<DynBox>& out, const Vec3& pos, double rotY, int variant, float scale, bool silhouette = false) {
     static const std::uint32_t jackets[] = {0xc0392b, 0x2f6fb0, 0x3f7a3a, 0x7d8288, 0xe0962b, 0x7a4fa0, 0x1f1f1f, 0xe8e3d6};
     static const std::uint32_t pants[] = {0x33445c, 0x1f1f1f, 0x6b4a2e, 0x2f6fb0};
     static const std::uint32_t skins[] = {0xf6d3b3, 0xe8b88f, 0xd39a6d, 0xb07a52, 0x8a5a3b, 0x5e3b27};
     const glm::vec3 p(static_cast<float>(pos.x), static_cast<float>(pos.y), static_cast<float>(pos.z));
     const float r = static_cast<float>(rotY);
     auto add = [&](glm::vec3 c, glm::vec3 s, std::uint32_t hex) {
-        out.push_back({p, r, c * scale, s * scale, rgbFromHex(hex)});
+        out.push_back({p, r, c * scale, s * scale, rgbFromHex(hex), silhouette});
     };
     add({0, 0.45f, 0}, {0.4f, 0.9f, 0.3f}, pants[variant % 4]);
     add({0, 1.2f, 0}, {0.5f, 0.7f, 0.3f}, jackets[variant % 8]);
@@ -101,6 +103,9 @@ struct Game::Impl {
     std::unique_ptr<Renderer> renderer;
     VisualWorld visual;
     std::unique_ptr<BuildingVisibility> visibility;
+    std::unique_ptr<LocalLights> lights;
+    AdaptiveResolution adaptive;
+    double deviceRatio = 1, simTime = 0;
 
     bool rightDrag = false;
 
@@ -219,6 +224,9 @@ struct Game::Impl {
             a.update(dt, rng);
             people.push_back(a.position);
         }
+        simTime += dt;
+        lights->update(simTime, state.clock.isNight(), motor.position,
+                       [this](double x, double z) { return city.groundHeightAt(x, z); }, [](const Aabb&) { return true; });
         traffic.update(dt, &motor.position, people);
         bus.update(dt, &motor.position, people);
         input.endFrame();
@@ -231,6 +239,9 @@ struct Game::Impl {
         f.lighting = lightingAt(state.clock.hour);
         applyDesaturation(f.lighting, state.stats.getDesaturation());
         f.night = state.clock.isNight();
+        f.lights = lights->pool();
+        f.halos = &lights->halos();
+        f.shadowTarget = motor.position;
         f.houseSeparate = &visibility->separate();
         for (size_t h = 0; h < visual.houses.size(); ++h) {
             if (!visibility->separate()[visual.houses[h].id]) continue;
@@ -240,7 +251,7 @@ struct Game::Impl {
             }
         }
 
-        personBoxes(f.boxes, motor.position, motor.rotationY, 0, 1.0f);
+        personBoxes(f.boxes, motor.position, motor.rotationY, 0, 1.0f, true);
 
         for (size_t i = 0; i < agents.size(); ++i)
             personBoxes(f.boxes, agents[i].position, agents[i].rotationY, static_cast<int>(i * 7 + 3), 0.95f);
@@ -278,8 +289,12 @@ struct Game::Impl {
         int pw, ph;
         SDL_GetWindowSizeInPixels(window, &pw, &ph);
         renderer->resize(pw, ph);
+        renderer->setRenderScale(opts.renderScale);
+        deviceRatio = std::max(1.0, static_cast<double>(SDL_GetWindowPixelDensity(window)));
+        adaptive = AdaptiveResolution(deviceRatio);
         visual = buildVisualWorld(city, rng);
         visibility = std::make_unique<BuildingVisibility>(visual.houses);
+        lights = std::make_unique<LocalLights>(visual.lights);
         renderer->uploadWorld(visual);
 
         const bool shot = !opts.screenshot.empty();
@@ -299,6 +314,7 @@ struct Game::Impl {
             last = now;
             const double dt = shot ? 1.0 / 60 : clampDt(real);
             metrics.sample(static_cast<double>(now) * 1000.0 / freq);
+            if (!shot && adaptive.sample(real * 1000.0)) renderer->setRenderScale(adaptive.ratio() / deviceRatio);
 
             update(dt);
             SDL_GetWindowSizeInPixels(window, &pw, &ph);
@@ -311,10 +327,10 @@ struct Game::Impl {
             if (titleTimer >= 0.5 && !shot) {
                 titleTimer = 0;
                 char title[160];
-                std::snprintf(title, sizeof title, "Bazuko - Día %d %02d:%02d - %.0f FPS (%.1f ms) - %d dibujos, %zu tri",
+                std::snprintf(title, sizeof title, "Bazuko - Día %d %02d:%02d - %.0f FPS (%.1f ms) - %d dibujos, %zu tri - %.0f%%",
                               state.clock.day, static_cast<int>(state.clock.hour),
                               static_cast<int>(state.clock.hour * 60) % 60, metrics.current(), metrics.frameMs(),
-                              stats.drawCalls, stats.triangles);
+                              stats.drawCalls, stats.triangles, renderer->renderScale() * 100);
                 SDL_SetWindowTitle(window, title);
             }
             if (shot && frame >= opts.frames) {
@@ -325,8 +341,8 @@ struct Game::Impl {
                     std::fprintf(stderr, "no se pudo escribir %s\n", opts.screenshot.c_str());
                     return 1;
                 }
-                std::printf("captura: %s (%dx%d, %d dibujos, %zu triángulos, %d lotes visibles / %d descartados)\n", opts.screenshot.c_str(), pw, ph,
-                            stats.drawCalls, stats.triangles, stats.batchesVisible, stats.batchesCulled);
+                std::printf("captura: %s (%dx%d, %d dibujos (%d de sombra), %zu triángulos, %d lotes visibles / %d descartados, %d halos)\n", opts.screenshot.c_str(), pw, ph,
+                            stats.drawCalls, stats.shadowDrawCalls, stats.triangles, stats.batchesVisible, stats.batchesCulled, stats.halos);
                 break;
             }
         }

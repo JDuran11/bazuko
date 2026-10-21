@@ -62,6 +62,15 @@ Lo portado (sin paridad bit a bit: el JS usa `Math.random` sin semilla y un nave
 Sin portar todavía: las luces dinámicas (faroles, fuego), sombras y los modelos de personajes (fases 6 y 7). Los cristales de la estación son láminas opacas.
 Diferencias de dibujo: sin mapas de relieve (`bumpMap`) ni de rugosidad; el texto del avisito «FRÁGIL ↑» del cartón no lleva la flecha (no está en la fuente).
 
+## Fase 6 · iluminación y sombras
+Sin cambios de comportamiento; se verifican con tests (`lights_test.cpp`) los números del JS:
+- **Sombra del sol**: mapa de 2048² ortográfico de ±45 m que sigue al jugador, PCF 3×3 sobre comparación por hardware, sesgo 0,0005 más *polygon offset*. Mejora respecto al JS: el centro del mapa se ajusta a la rejilla de texels (no hay temblor al caminar). De noche (sol < 0,12) se omite la pasada: casi no se vería.
+- **Dos luces puntuales reales** (`LocalLights`): puntuación `pico / (1 + d²)`, rango de 80 m, plazas fijas (vacías con intensidad 0); la atenuación es la de three.js (`1/d^decay` con corte suave). Faroles (1,2 solo de noche, 8 m), 4 canecas (5 ± 1,2 ± 0,8) y 2 fritangas (2,2 ± 0,4) parpadeantes.
+- **Halos decorativos** (hasta 48, a menos de 45 m, color atenuado por intensidad y distancia), aditivos y sin tonemapping, sobre el suelo.
+- **Silueta del jugador**: pasada con profundidad `GREATER` (cian `0x73e5ef`, 0,65) y repintado del jugador visible para borrar la falsa silueta entre sus partes.
+- **Resolución adaptativa** (`AdaptiveResolution`, 0,75×–1,5×, ventanas de 3 s; `--scale` para forzarla): la escena se dibuja en un FBO multimuestreado, se resuelve a textura y se amplía con un triángulo de pantalla completa (un blit con escalado hacia el framebuffer multimuestreado de la ventana no es válido en OpenGL).
+- Los lotes con `castShadow = false` (suelo, marcas, carteles, cerros) no proyectan sombra.
+
 Pendientes de fases siguientes (ya identificados):
 - Fase 8: `sortValueMult` sin efecto (se aplicará al valor de lo seleccionado), aviso al perder ítems por inventario lleno, multiplicador por higiene baja en la probabilidad de enfermar (`StatsSystem::getDiseaseChanceMultiplier` ya existe pero nadie lo usa en la versión web), `CraftingStation` sin interacción, `player.speedMult` muerto.
 - Fase 10: desaturación por ánimo bajo (`getDesaturation` ya está portado).

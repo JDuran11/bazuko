@@ -19,6 +19,7 @@ void usage() {
         "    --at X Z                   posición inicial en la rejilla original (El Cartucho: 8-21, 14-29)\n"
         "    --yaw RAD                  rumbo inicial de la cámara\n"
         "    --size W H                 tamaño de la ventana (1280 720)\n"
+        "    --scale F                  resolución interna (0.5-1) sin resolución adaptativa\n"
         "    --seed N                   semilla del azar\n"
         "  Controles: WASD mover, Shift correr, V cámara, clic derecho/flechas girar, rueda zoom, Esc salir");
 }
@@ -44,6 +45,7 @@ int main(int argc, char** argv) {
         else if (!std::strcmp(a, "--at")) { o.posX = std::atof(next(a)); o.posZ = std::atof(next(a)); o.atOriginal = true; }
         else if (!std::strcmp(a, "--yaw")) o.yaw = std::atof(next(a));
         else if (!std::strcmp(a, "--size")) { o.width = std::atoi(next(a)); o.height = std::atoi(next(a)); }
+        else if (!std::strcmp(a, "--scale")) o.renderScale = std::atof(next(a));
         else if (!std::strcmp(a, "--seed")) o.seed = static_cast<unsigned>(std::atoi(next(a)));
         else if (!std::strcmp(a, "--help") || !std::strcmp(a, "-h")) { usage(); return 0; }
         else { std::fprintf(stderr, "opción desconocida: %s\n", a); usage(); return 2; }

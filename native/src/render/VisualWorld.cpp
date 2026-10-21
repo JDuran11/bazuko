@@ -55,6 +55,7 @@ int VisualBuilder::color(std::uint32_t hex, bool unlit, bool doubleSided, double
     const Rgb c = rgbFromHex(hex);
     m.tint = {c.r * scale, c.g * scale, c.b * scale};
     m.unlit = unlit;
+    m.castShadow = !unlit;  // llamas, carteles y cerros no proyectan sombra
     m.doubleSided = doubleSided;
     m.noFog = noFog;
     return colorCache_[key] = addMaterial(m);
@@ -69,6 +70,7 @@ int VisualBuilder::textured(int tex, std::uint32_t tintHex, bool unlit, bool dou
     m.map = tex;
     m.tint = rgbFromHex(tintHex);
     m.unlit = unlit;
+    m.castShadow = !unlit;
     m.doubleSided = doubleSided;
     return texturedCache_[key] = addMaterial(m);
 }
@@ -117,12 +119,28 @@ int VisualBuilder::signTexture(const std::string& title, const std::string& sub,
     m.map = t;
     m.unlit = true;
     m.doubleSided = true;
+    m.castShadow = false;
     return signCache_[key] = addMaterial(m);
 }
 
 void VisualBuilder::addLight(const Vec3& p, std::uint32_t hex, double intensity, double distance, double decay, bool nightOnly,
-                             bool flicker) {
-    w.lights.push_back({p, rgbFromHex(hex), intensity, distance, decay, nightOnly, flicker});
+                             bool flicker, double amp1, double f1, double amp2, double f2) {
+    LightSource l;
+    l.position = p;
+    l.color = rgbFromHex(hex);
+    l.intensity = intensity;
+    l.distance = distance;
+    l.decay = decay;
+    l.nightOnly = nightOnly;
+    l.flicker = flicker;
+    l.amp1 = amp1; l.f1 = f1; l.amp2 = amp2; l.f2 = f2;
+    w.lights.push_back(l);
+}
+
+double LightSource::intensityAt(double t, bool night) const {
+    if (nightOnly && !night) return 0;
+    if (!flicker) return intensity;
+    return intensity + amp1 * std::sin(t * f1) + amp2 * std::sin(t * f2);
 }
 
 // ------------------------------------------------------------------------- lotes por sector
@@ -183,6 +201,8 @@ void VisualBuilder::buildGround() {
     }(), 8};
     spec[Tile::Plaza] = {textured(sidewalkTex, 0xc9b9a0), 6};
     const int curb = color(0xd8d4c8);
+    w.materials[curb].castShadow = false;
+    for (auto& kv : spec) w.materials[kv.second.mat].castShadow = false;  // el suelo recibe sombra pero no la proyecta
 
     const TileMap& map = this->map();
     const float H = static_cast<float>(kTile) / 2;
@@ -218,6 +238,7 @@ void VisualBuilder::buildGround() {
 void VisualBuilder::buildMarkings() {
     const int white = [&] { MaterialDef m; m.tint = rgbFromHex(0xe2e2dc); m.polygonOffset = true; return addMaterial(m); }();
     const int yellow = [&] { MaterialDef m; m.tint = rgbFromHex(0xe0a800); m.polygonOffset = true; return addMaterial(m); }();
+    w.materials[white].castShadow = w.materials[yellow].castShadow = false;
     const int sep = color(0xcfcac0);
     const auto& calles = cityCalles();
     const auto& carreras = cityCarreras();

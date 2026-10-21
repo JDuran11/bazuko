@@ -142,4 +142,75 @@ void GpuUintBuffer::upload(const std::vector<std::uint8_t>& values) {
 
 void GpuUintBuffer::bind(GLuint binding) const { glBindBufferBase(GL_SHADER_STORAGE_BUFFER, binding, id_); }
 
+DepthTarget::DepthTarget(int size) : size_(size) {
+    glGenTextures(1, &tex_);
+    glBindTexture(GL_TEXTURE_2D, tex_);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, size, size, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    const GLfloat border[4] = {1, 1, 1, 1};  // fuera del mapa: sin sombra
+    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, border);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+    glGenFramebuffers(1, &fbo_);
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, tex_, 0);
+    glDrawBuffer(GL_NONE);
+    glReadBuffer(GL_NONE);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) throw std::runtime_error("framebuffer de sombras incompleto");
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+DepthTarget::~DepthTarget() {
+    if (fbo_) glDeleteFramebuffers(1, &fbo_);
+    if (tex_) glDeleteTextures(1, &tex_);
+}
+
+void DepthTarget::bind() const {
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
+    glViewport(0, 0, size_, size_);
+}
+
+void DepthTarget::bindTexture(GLuint unit) const {
+    glActiveTexture(GL_TEXTURE0 + unit);
+    glBindTexture(GL_TEXTURE_2D, tex_);
+}
+
+ColorTarget::ColorTarget(int width, int height, int samples, bool asTexture) : w_(width), h_(height) {
+    glGenFramebuffers(1, &fbo_);
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
+    if (asTexture && samples <= 1) {
+        glGenTextures(1, &colorTex_);
+        glBindTexture(GL_TEXTURE_2D, colorTex_);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorTex_, 0);
+    } else {
+        glGenRenderbuffers(1, &color_);
+        glBindRenderbuffer(GL_RENDERBUFFER, color_);
+        if (samples > 1) glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, GL_RGBA8, width, height);
+        else glRenderbufferStorage(GL_RENDERBUFFER, GL_RGBA8, width, height);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, color_);
+    }
+    glGenRenderbuffers(1, &depth_);
+    glBindRenderbuffer(GL_RENDERBUFFER, depth_);
+    if (samples > 1) glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, GL_DEPTH_COMPONENT24, width, height);
+    else glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, width, height);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depth_);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) throw std::runtime_error("framebuffer de color incompleto");
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+ColorTarget::~ColorTarget() {
+    if (fbo_) glDeleteFramebuffers(1, &fbo_);
+    if (color_) glDeleteRenderbuffers(1, &color_);
+    if (colorTex_) glDeleteTextures(1, &colorTex_);
+    if (depth_) glDeleteRenderbuffers(1, &depth_);
+}
+
 }  // namespace bazuko

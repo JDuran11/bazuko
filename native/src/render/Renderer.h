@@ -9,7 +9,9 @@
 #include "game/CameraRig.h"
 #include "game/Lighting.h"
 #include "render/Gpu.h"
+#include "render/LocalLights.h"
 #include "render/MeshBuilder.h"
+#include "render/Shadow.h"
 #include "render/VisualWorld.h"
 
 namespace bazuko {
@@ -21,6 +23,7 @@ struct DynBox {
     glm::vec3 localCenter;  // centro de la caja respecto a la entidad
     glm::vec3 size;
     Rgb color;
+    bool silhouette = false;  // el jugador: se perfila en cian cuando algo lo tapa
 };
 
 // Pieza de una casa que se dibuja suelta (alguna de sus partes está atenuada).
@@ -40,12 +43,19 @@ struct FrameInput {
     // Por id de casa (índice 0 = ninguna): 1 si sus partes altas se dibujan por separado.
     const std::vector<std::uint8_t>* houseSeparate = nullptr;
     std::vector<PartDraw> parts;
+    // Luces puntuales reales (LocalLights::kPoolSize) y halos decorativos.
+    const PooledLight* lights = nullptr;
+    const std::vector<Halo>* halos = nullptr;
+    Vec3 shadowTarget{};  // el sol y su caja de sombras siguen a este punto (el jugador)
 };
 
 struct RenderStats {
     int drawCalls = 0;
     size_t triangles = 0;
     int batchesVisible = 0, batchesCulled = 0;
+    int shadowDrawCalls = 0;  // incluidos en drawCalls
+    bool shadowPass = false;
+    int halos = 0;
 };
 
 class Renderer {
@@ -56,6 +66,9 @@ public:
     // Sube texturas, materiales y mallas del distrito a la GPU.
     void uploadWorld(const VisualWorld& world);
     void resize(int width, int height);
+    // Fracción del tamaño de la ventana a la que se dibuja la escena (resolución adaptativa); 1 = nativa.
+    void setRenderScale(double scale) { scale_ = scale; }
+    double renderScale() const { return scale_; }
     RenderStats render(const FrameInput& frame);
     // Lee el framebuffer (RGBA, de arriba a abajo).
     std::vector<unsigned char> readPixels(int& width, int& height) const;
@@ -71,9 +84,18 @@ private:
     };
     void bindMaterial(const MaterialDef& m, bool night, float alpha);
     void drawBatches(const std::vector<GpuBatch>& list, const class Frustum* frustum, bool night, RenderStats& stats);
+    void renderShadowPass(const FrameInput& f, const ShadowFrame& shadow, RenderStats& stats);
+    void drawScene(const FrameInput& f, const ShadowFrame* shadow, int width, int height, RenderStats& stats);
+    void drawBoxes(const FrameInput& f, bool onlySilhouette, RenderStats& stats);
+    void ensureScaledTargets(int w, int h);
 
-    std::unique_ptr<Shader> shader_;
-    std::unique_ptr<GpuMesh> unitBox_;
+    std::unique_ptr<Shader> shader_, depthShader_, blitShader_;
+    GLuint emptyVao_ = 0;
+    std::unique_ptr<GpuMesh> unitBox_, haloQuad_;
+    std::unique_ptr<GpuTexture> haloTexture_;
+    std::unique_ptr<DepthTarget> shadowMap_;
+    std::unique_ptr<ColorTarget> sceneTarget_, resolveTarget_;
+    double scale_ = 1;
     std::vector<GpuTexture> textures_;
     std::vector<MaterialDef> materials_;
     std::vector<GpuBatch> statics_, closed_;

@@ -70,6 +70,7 @@ add_library(bazuko_core STATIC
   src/world/PedestrianAgent.cpp
   src/world/Bogota.cpp
   src/core/Input.cpp
+  src/core/AdaptiveResolution.cpp
   src/game/Lighting.cpp
   src/game/CameraRig.cpp
   src/game/PlayerMotor.cpp)
@@ -84,6 +85,7 @@ add_library(bazuko_gfx STATIC
   src/render/ProceduralTextures.cpp
   src/render/BuildingVisibility.cpp
   src/render/Frustum.cpp
+  src/render/Shadow.cpp
   src/render/VisualWorld.cpp
   src/render/VisualProps.cpp)
 target_include_directories(bazuko_gfx PUBLIC src)
@@ -113,7 +115,7 @@ if(BAZUKO_BUILD_APP)
 endif()
 
 enable_testing()
-add_executable(bazuko_tests tests/main_test.cpp tests/core_test.cpp tests/data_test.cpp tests/sim_test.cpp tests/save_test.cpp tests/world_test.cpp tests/traffic_test.cpp tests/render_logic_test.cpp tests/canvas_test.cpp tests/visual_test.cpp)
+add_executable(bazuko_tests tests/main_test.cpp tests/core_test.cpp tests/data_test.cpp tests/sim_test.cpp tests/save_test.cpp tests/world_test.cpp tests/traffic_test.cpp tests/render_logic_test.cpp tests/canvas_test.cpp tests/visual_test.cpp tests/lights_test.cpp)
 target_compile_definitions(bazuko_tests PRIVATE BAZUKO_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
 target_link_libraries(bazuko_tests PRIVATE bazuko_gfx doctest::doctest)
 add_test(NAME bazuko_tests COMMAND bazuko_tests)
