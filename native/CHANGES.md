@@ -36,6 +36,17 @@ Diferencias de implementación (no de comportamiento):
 - `TrafficRoute::sample` devuelve el final del último tramo si el redondeo lo deja fuera (JS dejaba el vector sin tocar).
 - Los vehículos de tráfico usan las medidas del carro/taxi (4,3 × 1,76 m); la buseta no se usa en la ciudad.
 
+## Fase 4 · render base
+Sin cambios de comportamiento. Iluminación día/noche, cámara (tercera persona con brazo que se acorta
+ante paredes, e isométrica) y movimiento del jugador verificados contra el JS con
+`data/render_reference.json` (`tools/export_render.mjs`): 17 horas del día, 7 cámaras, recuperación
+del brazo, cámara isométrica, límites de giro/zoom y 103 casos de WASD.
+
+Aproximaciones del render (se afinan en las fases 5–6):
+- Luz difusa estilo three.js (hemisférica + direccional + ambiente), tonemapping ACES (exposición 1,05), sRGB y niebla lineal por profundidad de vista.
+- El IBL de `RoomEnvironment` (PMREM) se sustituye por una irradiancia ambiental constante escalada con `environmentIntensity` (`kEnvIrradiance` en `Renderer.cpp`).
+- Edificios como cajas de color plano y personajes/vehículos como cajas: la geometría real llega en las fases 5 y 7. Sin sombras todavía (fase 6).
+
 Pendientes de fases siguientes (ya identificados):
 - Fase 8: `sortValueMult` sin efecto (se aplicará al valor de lo seleccionado), aviso al perder ítems por inventario lleno, multiplicador por higiene baja en la probabilidad de enfermar (`StatsSystem::getDiseaseChanceMultiplier` ya existe pero nadie lo usa en la versión web), `CraftingStation` sin interacción, `player.speedMult` muerto.
 - Fase 10: desaturación por ánimo bajo (`getDesaturation` ya está portado).
