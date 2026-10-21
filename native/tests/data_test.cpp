@@ -4,13 +4,11 @@
 #include <stdexcept>
 
 #include "game/data/GameData.h"
+#include "test_util.h"
 
 using bazuko::GameData;
 
-static const GameData& data() {
-    static const GameData d = GameData::load(std::string(BAZUKO_DATA_DIR) + "/game_data.json");
-    return d;
-}
+static const GameData& data() { return testutil::data(); }
 
 TEST_CASE("game_data.json carga con los conteos esperados") {
     const auto& d = data();
