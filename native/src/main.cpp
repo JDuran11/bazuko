@@ -22,7 +22,13 @@ void usage() {
         "    --size W H                 tamaño de la ventana (1280 720)\n"
         "    --scale F                  resolución interna (0.5-1) sin resolución adaptativa\n"
         "    --seed N                   semilla del azar\n"
-        "  Controles: WASD mover, Shift correr, V cámara, clic derecho/flechas girar, rueda zoom, Esc salir");
+        "    --new                      ignora el guardado y abre el creador de personaje\n"
+        "    --no-audio                 sin sonido\n"
+        "    --save RUTA                archivo de guardado (por defecto ~/.local/share/bazuko/save.json)\n"
+        "    --creator | --open PANEL   (capturas) muestra el creador o un panel: talentos, crafteo, dealer,\n"
+        "                               recicladora, tienda, cambuche\n"
+        "  Controles: WASD mover, Shift correr, E/Q/F/B interactuar, T talentos, C crafteo, V cámara, M modelo,\n"
+        "             P apariencia, F3 rendimiento, clic derecho/flechas girar, rueda zoom, Esc cierra/sale");
 }
 
 }  // namespace
@@ -48,6 +54,11 @@ int main(int argc, char** argv) {
         else if (!std::strcmp(a, "--yaw")) o.yaw = std::atof(next(a));
         else if (!std::strcmp(a, "--size")) { o.width = std::atoi(next(a)); o.height = std::atoi(next(a)); }
         else if (!std::strcmp(a, "--scale")) o.renderScale = std::atof(next(a));
+        else if (!std::strcmp(a, "--new")) o.newGame = true;
+        else if (!std::strcmp(a, "--no-audio")) o.noAudio = true;
+        else if (!std::strcmp(a, "--save")) o.savePath = next(a);
+        else if (!std::strcmp(a, "--creator")) o.creator = true;
+        else if (!std::strcmp(a, "--open")) o.openPanel = next(a);
         else if (!std::strcmp(a, "--seed")) o.seed = static_cast<unsigned>(std::atoi(next(a)));
         else if (!std::strcmp(a, "--help") || !std::strcmp(a, "-h")) { usage(); return 0; }
         else { std::fprintf(stderr, "opción desconocida: %s\n", a); usage(); return 2; }

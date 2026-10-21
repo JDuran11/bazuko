@@ -7,7 +7,7 @@ namespace bazuko {
 
 enum class Key {
     W, A, S, D, ShiftLeft, ShiftRight, ArrowUp, ArrowDown, ArrowLeft, ArrowRight,
-    E, Q, F, V, B, L, T, C, P, M, Escape, Space,
+    E, Q, F, V, B, L, T, C, P, M, F3, Escape, Space,
     Count
 };
 

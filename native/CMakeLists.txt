@@ -33,6 +33,18 @@ FetchContent_Declare(json
   GIT_SHALLOW TRUE)
 FetchContent_MakeAvailable(json)
 
+# miniaudio (un solo archivo) y Dear ImGui (con los backends de SDL3 y OpenGL 3).
+FetchContent_Declare(miniaudio
+  GIT_REPOSITORY https://github.com/mackron/miniaudio.git
+  GIT_TAG 0.11.24
+  GIT_SHALLOW TRUE)
+FetchContent_MakeAvailable(miniaudio)
+FetchContent_Declare(imgui
+  GIT_REPOSITORY https://github.com/ocornut/imgui.git
+  GIT_TAG v1.91.9
+  GIT_SHALLOW TRUE)
+FetchContent_MakeAvailable(imgui)
+
 if(BAZUKO_BUILD_APP)
   # SDL3: usa el paquete del sistema (dnf install SDL3-devel) o lo compila desde fuente.
   find_package(SDL3 3.2 QUIET CONFIG)
@@ -62,6 +74,7 @@ add_library(bazuko_core STATIC
   src/game/Entities.cpp
   src/game/Interaction.cpp
   src/game/Places.cpp
+  src/game/UiText.cpp
   src/world/StreetLayout.cpp
   src/world/TileMap.cpp
   src/world/CityLayout.cpp
@@ -116,6 +129,19 @@ target_compile_definitions(bazuko_gfx PUBLIC BAZUKO_ASSETS_DIR="${CMAKE_CURRENT_
 target_link_libraries(bazuko_gfx PUBLIC bazuko_core glm::glm PkgConfig::WEBP)
 target_compile_options(bazuko_gfx PRIVATE -Wall -Wextra)
 
+# Audio: efectos y ambiente. Los WAV son del juego web (en LFS: `git lfs pull`); sin ellos el juego queda en silencio.
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/assets/audio")
+  set(BAZUKO_AUDIO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets/audio")
+else()
+  set(BAZUKO_AUDIO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../web/public/audio")
+endif()
+add_library(bazuko_audio STATIC src/audio/AudioEngine.cpp)
+target_include_directories(bazuko_audio PUBLIC src)
+target_include_directories(bazuko_audio SYSTEM PRIVATE ${miniaudio_SOURCE_DIR})
+target_compile_definitions(bazuko_audio PUBLIC BAZUKO_AUDIO_DIR="${BAZUKO_AUDIO_DIR}")
+target_link_libraries(bazuko_audio PRIVATE ${CMAKE_DL_LIBS} m Threads::Threads)
+find_package(Threads REQUIRED)
+
 add_executable(texdump tools/texdump.cpp)
 target_link_libraries(texdump PRIVATE bazuko_gfx)
 
@@ -129,17 +155,24 @@ if(BAZUKO_BUILD_APP)
   target_link_libraries(bazuko_render PUBLIC bazuko_gfx)
   target_compile_options(bazuko_render PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Wall -Wextra>)
 
-  add_executable(bazuko src/main.cpp src/app/Game.cpp src/app/EntityModels.cpp)
+  add_library(imgui_lib STATIC
+    ${imgui_SOURCE_DIR}/imgui.cpp ${imgui_SOURCE_DIR}/imgui_draw.cpp ${imgui_SOURCE_DIR}/imgui_tables.cpp
+    ${imgui_SOURCE_DIR}/imgui_widgets.cpp ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp)
+  target_include_directories(imgui_lib SYSTEM PUBLIC ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
+  target_link_libraries(imgui_lib PUBLIC SDL3::SDL3)
+
+  add_executable(bazuko src/main.cpp src/app/Game.cpp src/app/EntityModels.cpp src/app/Ui.cpp)
   target_include_directories(bazuko SYSTEM PRIVATE third_party/stb)
   target_compile_definitions(bazuko PRIVATE BAZUKO_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
-  target_link_libraries(bazuko PRIVATE bazuko_render SDL3::SDL3)
+  target_link_libraries(bazuko PRIVATE bazuko_render bazuko_audio imgui_lib SDL3::SDL3)
   target_compile_options(bazuko PRIVATE -Wall -Wextra)
 endif()
 
 enable_testing()
-add_executable(bazuko_tests tests/main_test.cpp tests/core_test.cpp tests/data_test.cpp tests/sim_test.cpp tests/save_test.cpp tests/world_test.cpp tests/traffic_test.cpp tests/render_logic_test.cpp tests/canvas_test.cpp tests/visual_test.cpp tests/lights_test.cpp tests/gltf_test.cpp tests/animation_test.cpp tests/character_test.cpp tests/procedural_test.cpp tests/game_test.cpp)
+add_executable(bazuko_tests tests/main_test.cpp tests/core_test.cpp tests/data_test.cpp tests/sim_test.cpp tests/save_test.cpp tests/world_test.cpp tests/traffic_test.cpp tests/render_logic_test.cpp tests/canvas_test.cpp tests/visual_test.cpp tests/lights_test.cpp tests/gltf_test.cpp tests/animation_test.cpp tests/character_test.cpp tests/procedural_test.cpp tests/game_test.cpp tests/audio_test.cpp tests/ui_test.cpp)
 target_compile_definitions(bazuko_tests PRIVATE BAZUKO_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
-target_link_libraries(bazuko_tests PRIVATE bazuko_gfx doctest::doctest)
+target_link_libraries(bazuko_tests PRIVATE bazuko_gfx bazuko_audio doctest::doctest)
 add_test(NAME bazuko_tests COMMAND bazuko_tests)
 
 if(BAZUKO_BUILD_APP AND BAZUKO_GPU_TESTS)

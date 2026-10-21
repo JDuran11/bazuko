@@ -17,6 +17,11 @@ struct Options {
     double yaw = -1e9;
     double renderScale = 1;  // fracción de la ventana a la que se dibuja la escena (pruebas de resolución adaptativa)
     unsigned seed = 0;       // 0 = aleatoria
+    bool newGame = false;    // ignora el guardado y abre el creador de personaje
+    bool noAudio = false;
+    bool creator = false;    // en capturas: muestra el creador
+    std::string openPanel;   // en capturas: talentos, crafteo, dealer, recicladora, tienda o cambuche
+    std::string savePath;    // vacío: la ruta por defecto (~/.local/share/bazuko/save.json)
     bool showHelp = false;
 };
 

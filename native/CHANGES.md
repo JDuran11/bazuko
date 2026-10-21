@@ -108,3 +108,13 @@ Diferencias respecto al web:
 - Sin texto sobre los carteles de la tienda ni la recicladora (la bodega ya existe en el mundo; solo lleva un anillo verde marcador, igual que el cambuche).
 - Los menús (recicladora, tienda, cambuche, dealer) llegan en la fase 9: de momento los eventos se imprimen en consola, E en la recicladora vende todo y E en el cambuche duerme si hay base.
 - La animación de acciones (`buscar`, `pedir`...) se envía al animador pero cae en idle porque solo existen los clips idle/walk/run.
+
+## Fase 9 · interfaz, audio y guardado
+- **Interfaz (Dear ImGui 1.91.9 + SDL3/OpenGL3, fuente Overpass, paleta azul/amarilla)**: HUD (nombre, nivel, XP, 7 necesidades con vicio en rojo en abstinencia, reloj, dinero, boost, advertencias críticas), mochila clicable (comida y remedios se usan con clic), enfermedades con tiempo, cartel de interacción, avisos apilados (2,5 s, máx. 6), paneles de talentos (T), crafteo (C) y dealer (Q), menús de recicladora, tienda/vendedores y cambuche (con dormir), diálogo de muerte con causas, creador de personaje (nombre, origen, sexo, edad, piel, pelo, barba, ropa; se previsualiza en el mundo con la cámara de frente, clic derecho para girar) y medidor de rendimiento (F3). Los textos y reglas sin dibujo viven en `game/UiText` (probados). Los emoji de los avisos se quitan porque la fuente no los tiene.
+- **Pantalla de carga** con progreso por etapas y pantalla de error si falla la carga.
+- **Audio (miniaudio, `audio/AudioEngine`)**: efectos, pasos en bucle (1,4× al correr), boost y ambiente en streaming. Tolera sin dispositivo, archivos ausentes (`boost.wav` no existe en el juego web) o punteros LFS. Los WAV se leen de `web/public/audio` (mover a `native/assets/audio` al quitar `web/`; hace falta `git lfs pull`).
+- **Guardado**: carga al arrancar (posición migrada, apariencia, cambuche), autoguardado cada 60 s, al dormir, al aceptar el creador y al salir. Un archivo ilegible se mueve a `*.corrupt` y se empieza de cero.
+- **Muerte y sueño**: el mundo se congela con menús, creador, muerte o sueño (fundido a negro de 1,4 s); reaparecer lleva al cambuche.
+- Nuevas opciones: `--new`, `--no-audio`, `--save RUTA`, `--creator`, `--open PANEL` (capturas de interfaz).
+
+Diferencias respecto al web: sin vista 3D propia en el creador (se usa el mundo); sin iconos en los menús; la mochila y los paneles no se pueden mover.
