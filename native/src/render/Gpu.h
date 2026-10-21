@@ -25,6 +25,7 @@ public:
     void set(const char* name, int v) const { glUniform1i(uniform(name), v); }
     void set(const char* name, const glm::vec3& v) const { glUniform3fv(uniform(name), 1, &v.x); }
     void set(const char* name, const glm::vec2& v) const { glUniform2fv(uniform(name), 1, &v.x); }
+    void setMat4Array(const char* name, const glm::mat4* m, int count) const { glUniformMatrix4fv(uniform(name), count, GL_FALSE, &m[0][0][0]); }
     void setArray(const char* name, const glm::vec3* v, int count) const { glUniform3fv(uniform(name), count, &v[0].x); }
     void setArray(const char* name, const glm::vec2* v, int count) const { glUniform2fv(uniform(name), count, &v[0].x); }
     void set(const char* name, const glm::mat4& m) const { glUniformMatrix4fv(uniform(name), 1, GL_FALSE, &m[0][0]); }
@@ -41,6 +42,23 @@ public:
     GpuMesh(const GpuMesh&) = delete;
     GpuMesh& operator=(const GpuMesh&) = delete;
     GpuMesh(GpuMesh&& o) noexcept;
+
+    void draw() const;
+    size_t triangles() const { return indexCount_ / 3; }
+
+private:
+    GLuint vao_ = 0, vbo_ = 0, ibo_ = 0;
+    size_t indexCount_ = 0;
+};
+
+// Malla con esqueleto: 16 floats por vértice (posición, normal, uv, joints, pesos).
+class GpuSkinnedMesh {
+public:
+    GpuSkinnedMesh(const std::vector<float>& vertices, const std::vector<std::uint32_t>& indices);
+    ~GpuSkinnedMesh();
+    GpuSkinnedMesh(const GpuSkinnedMesh&) = delete;
+    GpuSkinnedMesh& operator=(const GpuSkinnedMesh&) = delete;
+    GpuSkinnedMesh(GpuSkinnedMesh&& o) noexcept;
 
     void draw() const;
     size_t triangles() const { return indexCount_ / 3; }

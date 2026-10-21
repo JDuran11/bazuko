@@ -155,6 +155,14 @@ GameData GameData::parse(const std::string& text) {
         d.sleep = {s.at("energia"), s.at("energiaCama"), s.at("salud"), s.at("saludTecho"),
                    s.at("animoFogon"), s.at("hambreFogon"), s.at("vicioVela"),
                    s.at("roboProb"), s.at("roboDinero"), s.at("roboMaterial")};
+        const auto& lk = j.at("look");
+        for (auto it = lk.at("palettes").begin(); it != lk.at("palettes").end(); ++it)
+            d.look.palettes[it.key()] = it.value().get<std::vector<std::string>>();
+        for (auto it = lk.at("colorNames").begin(); it != lk.at("colorNames").end(); ++it)
+            d.look.colorNames[it.key()] = it.value().get<std::vector<std::string>>();
+        for (auto it = lk.at("styles").begin(); it != lk.at("styles").end(); ++it)
+            for (const auto& o : it.value()) d.look.styles[it.key()].push_back({o.at("id"), o.at("label")});
+        d.look.nameIdeas = lk.at("nameIdeas").get<std::vector<std::string>>();
         for (const auto& e : j.at("diseases"))
             d.diseases.push_back({e.at("id"), e.at("name"), e.at("emoji"),
                                   e.at("healthDrain"), e.at("mentalDrain"), e.at("duration")});

@@ -210,4 +210,78 @@ void MeshBuilder::sphere(float radius, int detail, const Rgb& color, bool flat) 
     orient(firstIndex);
 }
 
+void MeshBuilder::uvSphere(float r, int ws, int hs, const Rgb& color, float phiStart, float phiLength, float thetaStart, float thetaLength) {
+    const size_t firstIndex = indices_.size();
+    const auto base = static_cast<std::uint32_t>(vertexCount());
+    for (int iy = 0; iy <= hs; ++iy) {
+        const float v = static_cast<float>(iy) / hs;
+        for (int ix = 0; ix <= ws; ++ix) {
+            const float u = static_cast<float>(ix) / ws;
+            const float ph = phiStart + u * phiLength, th = thetaStart + v * thetaLength;
+            const glm::vec3 p(-r * std::cos(ph) * std::sin(th), r * std::cos(th), r * std::sin(ph) * std::sin(th));
+            vertex(p, glm::normalize(p), color, {u, 1 - v});
+        }
+    }
+    for (int iy = 0; iy < hs; ++iy) {
+        for (int ix = 0; ix < ws; ++ix) {
+            const std::uint32_t a = base + iy * (ws + 1) + ix + 1, b = base + iy * (ws + 1) + ix;
+            const std::uint32_t c = base + (iy + 1) * (ws + 1) + ix, d = base + (iy + 1) * (ws + 1) + ix + 1;
+            if (iy != 0 || thetaStart > 0) { indices_.push_back(a); indices_.push_back(b); indices_.push_back(d); }
+            if (iy != hs - 1 || thetaStart + thetaLength < 3.141592f) { indices_.push_back(b); indices_.push_back(c); indices_.push_back(d); }
+        }
+    }
+    orient(firstIndex);
+}
+
+void MeshBuilder::capsule(float radius, float length, int capSeg, int radialSeg, const Rgb& color) {
+    const size_t firstIndex = indices_.size();
+    const float halfPi = 1.570796327f;
+    struct Ring { float y, rad, ny, nr; };  // altura, radio y normal (componente vertical y radial)
+    std::vector<Ring> rings;
+    for (int i = capSeg; i >= 0; --i) {  // tapa superior: del polo al ecuador
+        const float a = static_cast<float>(i) / capSeg * halfPi;
+        rings.push_back({length / 2 + radius * std::sin(a), radius * std::cos(a), std::sin(a), std::cos(a)});
+    }
+    for (int i = 0; i <= capSeg; ++i) {  // tapa inferior: del ecuador al polo
+        const float a = static_cast<float>(i) / capSeg * halfPi;
+        rings.push_back({-length / 2 - radius * std::sin(a), radius * std::cos(a), -std::sin(a), std::cos(a)});
+    }
+    const auto base = static_cast<std::uint32_t>(vertexCount());
+    for (size_t r = 0; r < rings.size(); ++r) {
+        for (int s = 0; s <= radialSeg; ++s) {
+            const float ang = 2 * 3.141592654f * s / radialSeg;
+            const glm::vec3 dir(std::sin(ang), 0, std::cos(ang));
+            vertex({dir.x * rings[r].rad, rings[r].y, dir.z * rings[r].rad}, {dir.x * rings[r].nr, rings[r].ny, dir.z * rings[r].nr}, color,
+                   {static_cast<float>(s) / radialSeg, 1 - static_cast<float>(r) / (rings.size() - 1)});
+        }
+    }
+    for (size_t r = 0; r + 1 < rings.size(); ++r)
+        for (int s = 0; s < radialSeg; ++s) {
+            const std::uint32_t a = base + static_cast<std::uint32_t>(r) * (radialSeg + 1) + s, b = a + 1;
+            const std::uint32_t c = a + (radialSeg + 1), d = c + 1;
+            for (auto i : {a, c, b, b, c, d}) indices_.push_back(i);
+        }
+    orient(firstIndex);
+}
+
+void MeshBuilder::torus(float radius, float tube, int radialSeg, int tubularSeg, const Rgb& color) {
+    const size_t firstIndex = indices_.size();
+    const auto base = static_cast<std::uint32_t>(vertexCount());
+    const float twoPi = 6.283185307f;
+    for (int j = 0; j <= radialSeg; ++j)
+        for (int i = 0; i <= tubularSeg; ++i) {
+            const float u = static_cast<float>(i) / tubularSeg * twoPi, v = static_cast<float>(j) / radialSeg * twoPi;
+            const glm::vec3 p((radius + tube * std::cos(v)) * std::cos(u), (radius + tube * std::cos(v)) * std::sin(u), tube * std::sin(v));
+            const glm::vec3 center(radius * std::cos(u), radius * std::sin(u), 0);
+            vertex(p, glm::normalize(p - center), color, {static_cast<float>(i) / tubularSeg, static_cast<float>(j) / radialSeg});
+        }
+    for (int j = 1; j <= radialSeg; ++j)
+        for (int i = 1; i <= tubularSeg; ++i) {
+            const std::uint32_t a = base + (tubularSeg + 1) * j + i - 1, b = base + (tubularSeg + 1) * (j - 1) + i - 1;
+            const std::uint32_t c = base + (tubularSeg + 1) * (j - 1) + i, d = base + (tubularSeg + 1) * j + i;
+            for (auto k : {a, b, d, b, c, d}) indices_.push_back(k);
+        }
+    orient(firstIndex);
+}
+
 }  // namespace bazuko

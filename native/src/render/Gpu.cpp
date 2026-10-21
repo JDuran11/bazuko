@@ -91,6 +91,39 @@ void GpuMesh::draw() const {
     glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(indexCount_), GL_UNSIGNED_INT, nullptr);
 }
 
+GpuSkinnedMesh::GpuSkinnedMesh(const std::vector<float>& vertices, const std::vector<std::uint32_t>& indices) : indexCount_(indices.size()) {
+    glGenVertexArrays(1, &vao_);
+    glGenBuffers(1, &vbo_);
+    glGenBuffers(1, &ibo_);
+    glBindVertexArray(vao_);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo_);
+    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(vertices.size() * sizeof(float)), vertices.data(), GL_STATIC_DRAW);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibo_);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, static_cast<GLsizeiptr>(indices.size() * sizeof(std::uint32_t)), indices.data(), GL_STATIC_DRAW);
+    const GLsizei stride = 16 * sizeof(float);
+    // posición, normal, uv, joints, pesos
+    const struct { GLint size; size_t offset; } attrs[5] = {{3, 0}, {3, 3}, {2, 6}, {4, 8}, {4, 12}};
+    for (GLuint i = 0; i < 5; ++i) {
+        glEnableVertexAttribArray(i);
+        glVertexAttribPointer(i, attrs[i].size, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(attrs[i].offset * sizeof(float)));
+    }
+    glBindVertexArray(0);
+}
+
+GpuSkinnedMesh::GpuSkinnedMesh(GpuSkinnedMesh&& o) noexcept
+    : vao_(std::exchange(o.vao_, 0)), vbo_(std::exchange(o.vbo_, 0)), ibo_(std::exchange(o.ibo_, 0)), indexCount_(o.indexCount_) {}
+
+GpuSkinnedMesh::~GpuSkinnedMesh() {
+    if (ibo_) glDeleteBuffers(1, &ibo_);
+    if (vbo_) glDeleteBuffers(1, &vbo_);
+    if (vao_) glDeleteVertexArrays(1, &vao_);
+}
+
+void GpuSkinnedMesh::draw() const {
+    glBindVertexArray(vao_);
+    glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(indexCount_), GL_UNSIGNED_INT, nullptr);
+}
+
 GpuTexture::GpuTexture(const Image& img) {
     // La fila 0 de la imagen es el borde superior; GL espera v = 0 abajo, así que se invierten las filas.
     std::vector<std::uint8_t> flipped(img.rgba.size());

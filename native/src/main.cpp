@@ -15,6 +15,7 @@ void usage() {
         "    --frames N                 cuadros antes de la captura (30)\n"
         "    --hour H                   hora fija del día (0-24)\n"
         "    --iso                      cámara isométrica\n"
+        "    --procedural               personaje liviano de primitivas (tecla M lo alterna)\n"
         "    --pos X Z                  posición inicial en tiles de la ciudad\n"
         "    --at X Z                   posición inicial en la rejilla original (El Cartucho: 8-21, 14-29)\n"
         "    --yaw RAD                  rumbo inicial de la cámara\n"
@@ -41,6 +42,7 @@ int main(int argc, char** argv) {
         else if (!std::strcmp(a, "--frames")) o.frames = std::atoi(next(a));
         else if (!std::strcmp(a, "--hour")) o.hour = std::atof(next(a));
         else if (!std::strcmp(a, "--iso")) o.isometric = true;
+        else if (!std::strcmp(a, "--procedural")) o.procedural = true;
         else if (!std::strcmp(a, "--pos")) { o.posX = std::atof(next(a)); o.posZ = std::atof(next(a)); }
         else if (!std::strcmp(a, "--at")) { o.posX = std::atof(next(a)); o.posZ = std::atof(next(a)); o.atOriginal = true; }
         else if (!std::strcmp(a, "--yaw")) o.yaw = std::atof(next(a));

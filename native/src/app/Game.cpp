@@ -7,11 +7,15 @@
 #include <stb_image_write.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <cstdio>
 #include <memory>
 #include <stdexcept>
 
+#include "character/Character.h"
+#include "character/ProceduralCharacter.h"
 #include "core/AdaptiveResolution.h"
 #include "core/FrameLoop.h"
 #include "core/FrameMetrics.h"
@@ -22,6 +26,8 @@
 #include "game/Lighting.h"
 #include "game/PlayerMotor.h"
 #include "render/BuildingVisibility.h"
+#include "render/CameraMatrices.h"
+#include "render/Frustum.h"
 #include "render/LocalLights.h"
 #include "render/Renderer.h"
 #include "render/VisualWorld.h"
@@ -33,6 +39,18 @@
 namespace bazuko {
 
 namespace {
+
+// BAZUKO_PROFILE=1 imprime lo que tarda cada etapa del arranque.
+struct StageTimer {
+    const char* name;
+    std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+    explicit StageTimer(const char* n) : name(n) {}
+    ~StageTimer() {
+        if (!std::getenv("BAZUKO_PROFILE")) return;
+        std::fprintf(stderr, "  %-10s %6.0f ms\n", name, std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
+    }
+};
+#define BAZUKO_TIMER(name) StageTimer bazukoTimer_(name)
 
 Key mapKey(SDL_Scancode sc, bool& ok) {
     ok = true;
@@ -63,23 +81,6 @@ Key mapKey(SDL_Scancode sc, bool& ok) {
     }
 }
 
-// Personaje de cajas (se sustituye por los modelos reales en la fase 7).
-void personBoxes(std::vector<DynBox>& out, const Vec3& pos, double rotY, int variant, float scale, bool silhouette = false) {
-    static const std::uint32_t jackets[] = {0xc0392b, 0x2f6fb0, 0x3f7a3a, 0x7d8288, 0xe0962b, 0x7a4fa0, 0x1f1f1f, 0xe8e3d6};
-    static const std::uint32_t pants[] = {0x33445c, 0x1f1f1f, 0x6b4a2e, 0x2f6fb0};
-    static const std::uint32_t skins[] = {0xf6d3b3, 0xe8b88f, 0xd39a6d, 0xb07a52, 0x8a5a3b, 0x5e3b27};
-    const glm::vec3 p(static_cast<float>(pos.x), static_cast<float>(pos.y), static_cast<float>(pos.z));
-    const float r = static_cast<float>(rotY);
-    auto add = [&](glm::vec3 c, glm::vec3 s, std::uint32_t hex) {
-        out.push_back({p, r, c * scale, s * scale, rgbFromHex(hex), silhouette});
-    };
-    add({0, 0.45f, 0}, {0.4f, 0.9f, 0.3f}, pants[variant % 4]);
-    add({0, 1.2f, 0}, {0.5f, 0.7f, 0.3f}, jackets[variant % 8]);
-    add({0, 1.7f, 0}, {0.3f, 0.3f, 0.3f}, skins[(variant / 3) % 6]);
-    add({0, 1.9f, 0}, {0.32f, 0.1f, 0.34f}, jackets[(variant + 3) % 8]);
-    add({0, 1.7f, 0.17f}, {0.2f, 0.06f, 0.06f}, 0x2a1a10);  // marca el frente (+Z)
-}
-
 }  // namespace
 
 struct Game::Impl {
@@ -104,6 +105,24 @@ struct Game::Impl {
     VisualWorld visual;
     std::unique_ptr<BuildingVisibility> visibility;
     std::unique_ptr<LocalLights> lights;
+
+    // Personajes reales: el jugador, la gente de la calle y los vendedores. Cada peatón guarda su versión
+    // liviana y la completa; se muestra una u otra según la distancia (con histéresis).
+    struct Person {
+        std::unique_ptr<Character> lod, full;
+        bool showFull = false, onScreen = true;
+        int frame = 0;
+        double animAcc = 0;
+    };
+    Catalog catalog;
+    std::unique_ptr<CharacterLibrary> library;
+    std::unique_ptr<Character> playerChar;
+    std::unique_ptr<ProceduralCharacter> playerProc;
+    bool proceduralPlayer = false;
+    double playerClock = 0;
+    std::vector<Person> crowd;    // alineada con `agents`
+    std::vector<Person> vendors;  // alineada con city.vendors()
+    double aspect = 16.0 / 9;
     AdaptiveResolution adaptive;
     double deviceRatio = 1, simTime = 0;
 
@@ -118,7 +137,8 @@ struct Game::Impl {
           rng(o.seed ? o.seed : std::random_device{}()),
           traffic(city.trafficRoutes(), 4, rng),
           bus(city.busRoute()),
-          state(data) {
+          state(data),
+          catalog(Catalog::load(std::string(BAZUKO_MODELS_DIR) + "/personaje/catalogo.json")) {
         for (const Vec3& p : city.pedestrianSpawns(nav)) {
             AgentOptions ao;
             ao.navigation = &nav;
@@ -193,6 +213,41 @@ struct Game::Impl {
         }
     }
 
+    static glm::mat4 characterModel(const Vec3& p, double rotY) {
+        return glm::scale(glm::rotate(glm::translate(glm::mat4(1.0f), glm::vec3(static_cast<float>(p.x), static_cast<float>(p.y), static_cast<float>(p.z))),
+                                      static_cast<float>(rotY), glm::vec3(0, 1, 0)),
+                          glm::vec3(static_cast<float>(kRealisticScale)));
+    }
+
+    // LOD y animación de un peatón según su distancia al jugador (Npc.update): lejos usa la versión liviana, la
+    // animación se reduce a un cuadro de cada tres pasados 20 m y se congela pasados 40 m si está quieto.
+    void updatePerson(Person& p, const Vec3& pos, bool moving, double speed, double dt, const Frustum& view) {
+        const double dist = std::hypot(pos.x - motor.position.x, pos.z - motor.position.z);
+        const Aabb sphere{{pos.x - 1.4, pos.y + 0.9 - 1.4, pos.z - 1.4}, {pos.x + 1.4, pos.y + 0.9 + 1.4, pos.z + 1.4}};
+        p.onScreen = view.intersects(sphere);
+        p.animAcc += dt;
+        if (!p.onScreen) return;  // fuera de cámara: ni se dibuja ni se anima
+        if (!p.showFull && dist < 7) p.showFull = true;
+        else if (p.showFull && dist > 10) p.showFull = false;
+        ++p.frame;
+        if (dist > 40 && !moving) return;
+        if (dist > 20 && p.frame % 3 != 0) return;
+        Character& c = p.showFull ? *p.full : *p.lod;
+        c.update(std::min(p.animAcc, 0.2), {moving ? speed / kRealisticScale : 0.0, false, {}});
+        p.animAcc = 0;
+    }
+
+    Person makePerson(const Look& look) {
+        Person p;
+        p.lod = std::make_unique<Character>(library->build(look, true));
+        p.full = std::make_unique<Character>(library->build(look, false));
+        // cada uno arranca en otro punto de la animación para que no se muevan al unísono
+        const double t = rng.next() * 3;
+        p.lod->update(t, {});
+        p.full->update(t, {});
+        return p;
+    }
+
     void update(double dt) {
         if (input.consumePress(Key::Escape)) SDL_PushEvent(new SDL_Event{.type = SDL_EVENT_QUIT});
         if (input.consumePress(Key::V)) {
@@ -224,6 +279,27 @@ struct Game::Impl {
             a.update(dt, rng);
             people.push_back(a.position);
         }
+        if (input.consumePress(Key::M)) proceduralPlayer = !proceduralPlayer;
+        playerClock += dt;
+        if (proceduralPlayer) {
+            ProceduralCharacter::Input pin;
+            pin.speed = motor.speed / kProceduralScale;
+            pin.running = motor.state == MoveState::Run;
+            pin.t = playerClock;
+            pin.dirt = std::max(0.0, (40 - state.stats.higiene) / 40);
+            playerProc->update(dt, pin);
+        } else {
+            playerChar->update(dt, {motor.speed / kRealisticScale, motor.state == MoveState::Run, {}});
+        }
+        {
+            const CameraMatrices cm = cameraMatrices(rig, aspect);
+            const Frustum view = Frustum::fromViewProjection(cm.proj * cm.view);
+            for (size_t i = 0; i < agents.size(); ++i) updatePerson(crowd[i], agents[i].position, agents[i].moving, agents[i].walkSpeed, dt, view);
+            for (size_t i = 0; i < vendors.size(); ++i) {
+                const Vendor& v = city.vendors()[i];
+                updatePerson(vendors[i], {v.x - std::sin(v.rotY) * 0.9, city.groundHeightAt(v.x, v.z), v.z - std::cos(v.rotY) * 0.9}, false, 0, dt, view);
+            }
+        }
         simTime += dt;
         lights->update(simTime, state.clock.isNight(), motor.position,
                        [this](double x, double z) { return city.groundHeightAt(x, z); }, [](const Aabb&) { return true; });
@@ -251,14 +327,22 @@ struct Game::Impl {
             }
         }
 
-        personBoxes(f.boxes, motor.position, motor.rotationY, 0, 1.0f, true);
-
-        for (size_t i = 0; i < agents.size(); ++i)
-            personBoxes(f.boxes, agents[i].position, agents[i].rotationY, static_cast<int>(i * 7 + 3), 0.95f);
-
-        for (const Vendor& v : city.vendors()) {
+        if (proceduralPlayer) {
+            glm::mat4 m = characterModel(motor.position, motor.rotationY);
+            m = glm::scale(m, glm::vec3(static_cast<float>(kProceduralScale / kRealisticScale)));
+            playerProc->collect(m, true, f.skinned);
+        } else {
+            playerChar->collect(characterModel(motor.position, motor.rotationY), true, f.skinned);
+        }
+        for (size_t i = 0; i < crowd.size(); ++i) {
+            if (!crowd[i].onScreen) continue;
+            (crowd[i].showFull ? *crowd[i].full : *crowd[i].lod).collect(characterModel(agents[i].position, agents[i].rotationY), false, f.skinned);
+        }
+        for (size_t i = 0; i < vendors.size(); ++i) {
+            if (!vendors[i].onScreen) continue;
+            const Vendor& v = city.vendors()[i];
             const Vec3 back{v.x - std::sin(v.rotY) * 0.9, city.groundHeightAt(v.x, v.z), v.z - std::cos(v.rotY) * 0.9};
-            personBoxes(f.boxes, back, v.rotY, static_cast<int>(v.x), 0.95f);
+            (vendors[i].showFull ? *vendors[i].full : *vendors[i].lod).collect(characterModel(back, v.rotY), false, f.skinned);
         }
 
         static const std::uint32_t paints[] = {0x2f6fb0, 0xc0392b, 0x7d8288, 0xe8e3d6, 0x1f1f1f, 0x3f7a3a, 0x7a4fa0, 0x0f6b6b};
@@ -295,6 +379,16 @@ struct Game::Impl {
         visual = buildVisualWorld(city, rng);
         visibility = std::make_unique<BuildingVisibility>(visual.houses);
         lights = std::make_unique<LocalLights>(visual.lights);
+        {
+            BAZUKO_TIMER("personajes");
+            library = std::make_unique<CharacterLibrary>(catalog, data.look, BAZUKO_MODELS_DIR, *renderer);
+            Look playerLook;  // apariencia por defecto hasta que exista el creador
+            playerChar = std::make_unique<Character>(library->build(playerLook, false));
+            playerProc = std::make_unique<ProceduralCharacter>(playerLook, data.look, *renderer, opts.seed ? opts.seed : 1);
+            proceduralPlayer = opts.procedural;
+            for (size_t i = 0; i < agents.size(); ++i) crowd.push_back(makePerson(randomStreetLook(catalog, data.look, rng, true)));
+            for (size_t i = 0; i < city.vendors().size(); ++i) vendors.push_back(makePerson(randomStreetLook(catalog, data.look, rng, false)));
+        }
         renderer->uploadWorld(visual);
 
         const bool shot = !opts.screenshot.empty();
@@ -316,8 +410,9 @@ struct Game::Impl {
             metrics.sample(static_cast<double>(now) * 1000.0 / freq);
             if (!shot && adaptive.sample(real * 1000.0)) renderer->setRenderScale(adaptive.ratio() / deviceRatio);
 
-            update(dt);
             SDL_GetWindowSizeInPixels(window, &pw, &ph);
+            aspect = static_cast<double>(pw) / std::max(1, ph);
+            update(dt);
             if (pw != 0) renderer->resize(pw, ph);
             stats = renderer->render(buildFrame(pw, ph));
             SDL_GL_SwapWindow(window);

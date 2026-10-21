@@ -65,6 +65,15 @@ struct DiseaseDef {
     double healthDrain = 0, mentalDrain = 0, duration = 0;
 };
 
+// Catálogo de apariencia del creador de personajes (look.js).
+struct StyleOption { std::string id, label; };
+struct LookData {
+    std::map<std::string, std::vector<std::string>> palettes;     // piel, pelo, ojos, ropa, zapato (hex "#rrggbb")
+    std::map<std::string, std::vector<std::string>> colorNames;
+    std::map<std::string, std::vector<StyleOption>> styles;       // cuerpo, contextura, pelo, cejas, barba, arriba...
+    std::vector<std::string> nameIdeas;
+};
+
 struct Needs6 { double hambre, sed, energia, higiene, animo, vicio; };
 
 struct GameData {
@@ -85,6 +94,7 @@ struct GameData {
     std::vector<CambuchePiece> cambuche;
     SleepConsts sleep{};
     std::vector<DiseaseDef> diseases;
+    LookData look;
 
     double c(const std::string& key) const;  // constante numérica; lanza si no existe
     const ItemDef* item(const std::string& id) const;

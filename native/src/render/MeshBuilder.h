@@ -36,6 +36,14 @@ public:
     void cone(float radius, float height, int segments, const Rgb& color);
     // Esfera de baja resolución (icosfera subdividida `detail` veces) con sombreado plano o suave.
     void sphere(float radius, int detail, const Rgb& color, bool flat = true);
+    // SphereGeometry de three.js: esfera (o casquete) con segmentos en horizontal y vertical.
+    // phi recorre en horizontal y theta en vertical desde el polo +y.
+    void uvSphere(float radius, int widthSegments, int heightSegments, const Rgb& color, float phiStart = 0,
+                  float phiLength = 6.283185307f, float thetaStart = 0, float thetaLength = 3.141592654f);
+    // CapsuleGeometry: cilindro de `length` con tapas semiesféricas (altura total length + 2·radius), centrada.
+    void capsule(float radius, float length, int capSegments, int radialSegments, const Rgb& color);
+    // TorusGeometry: anillo en el plano XY (eje Z).
+    void torus(float radius, float tube, int radialSegments, int tubularSegments, const Rgb& color);
     // Disco horizontal mirando hacia +y.
     void disc(float radius, int segments, const Rgb& color);
 

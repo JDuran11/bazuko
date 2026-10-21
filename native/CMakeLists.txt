@@ -78,6 +78,9 @@ target_include_directories(bazuko_core PUBLIC src)
 target_link_libraries(bazuko_core PUBLIC nlohmann_json::nlohmann_json)
 target_compile_options(bazuko_core PRIVATE -Wall -Wextra)
 
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(WEBP REQUIRED IMPORTED_TARGET libwebp)
+
 # Gráficos en CPU (mallas, canvas 2D, texturas procedurales, mundo visual): sin GL ni SDL, testeables.
 add_library(bazuko_gfx STATIC
   src/render/MeshBuilder.cpp
@@ -87,11 +90,27 @@ add_library(bazuko_gfx STATIC
   src/render/Frustum.cpp
   src/render/Shadow.cpp
   src/render/VisualWorld.cpp
-  src/render/VisualProps.cpp)
+  src/render/VisualProps.cpp
+  src/character/Gltf.cpp
+  src/character/Rig.cpp
+  src/character/Retarget.cpp
+  src/character/Animator.cpp
+  src/character/Look.cpp
+  src/character/Catalog.cpp
+  src/character/CharacterLibrary.cpp
+  src/character/Character.cpp
+  src/character/ProceduralCharacter.cpp)
 target_include_directories(bazuko_gfx PUBLIC src)
 target_include_directories(bazuko_gfx SYSTEM PUBLIC third_party/stb)
-target_compile_definitions(bazuko_gfx PUBLIC BAZUKO_ASSETS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets")
-target_link_libraries(bazuko_gfx PUBLIC bazuko_core glm::glm)
+# Modelos y texturas de personajes: los de native/assets si existen; si no, los del juego web (mismo repositorio).
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/assets/models")
+  set(BAZUKO_MODELS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets/models")
+else()
+  set(BAZUKO_MODELS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../web/public/models")
+endif()
+target_compile_definitions(bazuko_gfx PUBLIC BAZUKO_ASSETS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets"
+                                              BAZUKO_MODELS_DIR="${BAZUKO_MODELS_DIR}")
+target_link_libraries(bazuko_gfx PUBLIC bazuko_core glm::glm PkgConfig::WEBP)
 target_compile_options(bazuko_gfx PRIVATE -Wall -Wextra)
 
 add_executable(texdump tools/texdump.cpp)
@@ -115,7 +134,7 @@ if(BAZUKO_BUILD_APP)
 endif()
 
 enable_testing()
-add_executable(bazuko_tests tests/main_test.cpp tests/core_test.cpp tests/data_test.cpp tests/sim_test.cpp tests/save_test.cpp tests/world_test.cpp tests/traffic_test.cpp tests/render_logic_test.cpp tests/canvas_test.cpp tests/visual_test.cpp tests/lights_test.cpp)
+add_executable(bazuko_tests tests/main_test.cpp tests/core_test.cpp tests/data_test.cpp tests/sim_test.cpp tests/save_test.cpp tests/world_test.cpp tests/traffic_test.cpp tests/render_logic_test.cpp tests/canvas_test.cpp tests/visual_test.cpp tests/lights_test.cpp tests/gltf_test.cpp tests/animation_test.cpp tests/character_test.cpp tests/procedural_test.cpp)
 target_compile_definitions(bazuko_tests PRIVATE BAZUKO_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
 target_link_libraries(bazuko_tests PRIVATE bazuko_gfx doctest::doctest)
 add_test(NAME bazuko_tests COMMAND bazuko_tests)

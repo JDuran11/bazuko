@@ -5,6 +5,7 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 
+#include "render/CameraMatrices.h"
 #include "render/Frustum.h"
 
 namespace bazuko {
@@ -62,6 +63,7 @@ uniform float uEmissiveScale;
 uniform int uUnlit;
 uniform int uNoFog;
 uniform float uAlpha;
+uniform float uAlphaCutoff;
 uniform int uToneMap;
 uniform sampler2DShadow uShadowMap;
 uniform mat4 uShadowMatrix;
@@ -135,6 +137,7 @@ void main() {
     if (vSeparate != 0u) discard;
     vec4 base = vec4(vColor * uTint, 1.0);
     if (uHasMap != 0) base *= texture(uMap, vUv);
+    if (base.a < uAlphaCutoff) discard;
 
     vec3 n = normalize(vNormal);
     if (!gl_FrontFacing) n = -n;
@@ -170,6 +173,66 @@ void main() {
 )";
 const char* kDepthFragmentSrc = "#version 450 core\nvoid main() {}\n";
 
+// Malla con esqueleto: mezcla las matrices de hueso (mundo · inverseBind) por vértice.
+const char* kSkinnedVertexSrc = R"(#version 450 core
+layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec3 aNormal;
+layout(location = 2) in vec2 aUv;
+layout(location = 3) in vec4 aJoints;
+layout(location = 4) in vec4 aWeights;
+
+uniform mat4 uViewProj;
+uniform mat4 uView;
+uniform mat4 uModel;
+uniform mat4 uBones[64];
+
+out vec3 vNormal;
+out vec3 vColor;
+out vec2 vUv;
+out vec3 vWorld;
+out float vDepth;
+flat out uint vSeparate;
+
+void main() {
+    mat4 skin = aWeights.x * uBones[int(aJoints.x + 0.5)] + aWeights.y * uBones[int(aJoints.y + 0.5)]
+              + aWeights.z * uBones[int(aJoints.z + 0.5)] + aWeights.w * uBones[int(aJoints.w + 0.5)];
+    vec4 world = uModel * (skin * vec4(aPos, 1.0));
+    vWorld = world.xyz;
+    vNormal = mat3(uModel) * (mat3(skin) * aNormal);
+    vColor = vec3(1.0);
+    vUv = aUv;
+    vDepth = -(uView * world).z;
+    vSeparate = 0u;
+    gl_Position = uViewProj * world;
+}
+)";
+const char* kSkinnedDepthVertexSrc = R"(#version 450 core
+layout(location = 0) in vec3 aPos;
+layout(location = 2) in vec2 aUv;
+layout(location = 3) in vec4 aJoints;
+layout(location = 4) in vec4 aWeights;
+uniform mat4 uLightViewProj;
+uniform mat4 uModel;
+uniform mat4 uBones[64];
+out vec2 vUv;
+void main() {
+    mat4 skin = aWeights.x * uBones[int(aJoints.x + 0.5)] + aWeights.y * uBones[int(aJoints.y + 0.5)]
+              + aWeights.z * uBones[int(aJoints.z + 0.5)] + aWeights.w * uBones[int(aJoints.w + 0.5)];
+    vUv = aUv;
+    gl_Position = uLightViewProj * uModel * (skin * vec4(aPos, 1.0));
+}
+)";
+// El pelo y las pestañas proyectan sombra solo donde su textura es opaca.
+const char* kSkinnedDepthFragmentSrc = R"(#version 450 core
+in vec2 vUv;
+uniform sampler2D uMap;
+uniform int uHasMap;
+uniform float uAlphaCutoff;
+void main() {
+    if (uHasMap != 0 && texture(uMap, vUv).a < uAlphaCutoff) discard;
+}
+)";
+
 // Triángulo que cubre la pantalla: amplía la escena renderizada a menor resolución.
 const char* kBlitVertexSrc = R"(#version 450 core
 out vec2 vUv;
@@ -202,6 +265,9 @@ Renderer::Renderer() {
     shader_ = std::make_unique<Shader>(kVertexSrc, kFragmentSrc);
     depthShader_ = std::make_unique<Shader>(kDepthVertexSrc, kDepthFragmentSrc);
     blitShader_ = std::make_unique<Shader>(kBlitVertexSrc, kBlitFragmentSrc);
+    skinnedShader_ = std::make_unique<Shader>(kSkinnedVertexSrc, kFragmentSrc);
+    skinnedDepthShader_ = std::make_unique<Shader>(kSkinnedDepthVertexSrc, kSkinnedDepthFragmentSrc);
+    cur_ = shader_.get();
     glGenVertexArrays(1, &emptyVao_);
     shadowMap_ = std::make_unique<DepthTarget>(kShadowMapSize);
 
@@ -235,6 +301,16 @@ Renderer::Renderer() {
 
 Renderer::~Renderer() {
     if (emptyVao_) glDeleteVertexArrays(1, &emptyVao_);
+}
+
+int Renderer::uploadTexture(const Image& image) {
+    charTextures_.emplace_back(image);
+    return static_cast<int>(charTextures_.size()) - 1;
+}
+
+int Renderer::uploadSkinnedMesh(const std::vector<float>& vertices, const std::vector<std::uint32_t>& indices) {
+    skinMeshes_.emplace_back(vertices, indices);
+    return static_cast<int>(skinMeshes_.size()) - 1;
 }
 
 void Renderer::uploadWorld(const VisualWorld& world) {
@@ -273,14 +349,15 @@ void Renderer::bindMaterial(const MaterialDef& m, bool night, float alpha) {
     const bool hasEmissive = m.emissive >= 0 && m.emissive < static_cast<int>(textures_.size());
     if (hasMap) textures_[m.map].bind(0);
     if (hasEmissive) textures_[m.emissive].bind(1);
-    shader_->set("uHasMap", hasMap ? 1 : 0);
-    shader_->set("uHasEmissive", hasEmissive ? 1 : 0);
-    shader_->set("uTint", v3(m.tint));
-    shader_->set("uEmissiveScale", (m.nightEmissive && !night) ? 0.0f : m.emissiveIntensity);
-    shader_->set("uUnlit", m.unlit ? 1 : 0);
-    shader_->set("uNoFog", m.noFog ? 1 : 0);
-    shader_->set("uToneMap", 1);
-    shader_->set("uAlpha", alpha);
+    cur_->set("uHasMap", hasMap ? 1 : 0);
+    cur_->set("uHasEmissive", hasEmissive ? 1 : 0);
+    cur_->set("uTint", v3(m.tint));
+    cur_->set("uEmissiveScale", (m.nightEmissive && !night) ? 0.0f : m.emissiveIntensity);
+    cur_->set("uUnlit", m.unlit ? 1 : 0);
+    cur_->set("uNoFog", m.noFog ? 1 : 0);
+    cur_->set("uToneMap", 1);
+    cur_->set("uAlpha", alpha);
+    cur_->set("uAlphaCutoff", 0.0f);
     if (m.doubleSided == cullEnabled_) {
         cullEnabled_ = !m.doubleSided;
         if (cullEnabled_) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
@@ -352,6 +429,23 @@ void Renderer::renderShadowPass(const FrameInput& f, const ShadowFrame& shadow, 
         ++stats.shadowDrawCalls;
         stats.triangles += unitBox_->triangles();
     }
+    if (!f.skinned.empty()) {
+        skinnedDepthShader_->use();
+        skinnedDepthShader_->set("uLightViewProj", shadow.viewProj);
+        skinnedDepthShader_->set("uMap", 0);
+        for (const SkinnedDraw& d : f.skinned) {
+            if (!d.castShadow || d.blend) continue;
+            const bool hasMap = d.texture >= 0 && d.texture < static_cast<int>(charTextures_.size());
+            if (hasMap) charTextures_[d.texture].bind(0);
+            skinnedDepthShader_->set("uModel", d.model);
+            skinnedDepthShader_->set("uHasMap", hasMap && d.alphaCutoff > 0 ? 1 : 0);
+            skinnedDepthShader_->set("uAlphaCutoff", d.alphaCutoff);
+            skinnedDepthShader_->setMat4Array("uBones", d.palette, std::min(d.paletteCount, kMaxBones));
+            skinMeshes_[d.mesh].draw();
+            ++stats.shadowDrawCalls;
+            stats.triangles += skinMeshes_[d.mesh].triangles();
+        }
+    }
     glDisable(GL_POLYGON_OFFSET_FILL);
     stats.drawCalls += stats.shadowDrawCalls;
     cullEnabled_ = false;  // el estado de culling lo restablece bindMaterial
@@ -382,41 +476,12 @@ void Renderer::drawScene(const FrameInput& f, const ShadowFrame* shadow, int wid
     glClearColor(static_cast<float>(bg.r), static_cast<float>(bg.g), static_cast<float>(bg.b), 1);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    const CameraRig& cam = *f.camera;
-    const glm::vec3 eye(cam.position.x, cam.position.y, cam.position.z);
-    const glm::vec3 target(cam.lookAt.x, cam.lookAt.y, cam.lookAt.z);
-    const glm::mat4 view = glm::lookAt(eye, target, glm::vec3(0, 1, 0));
-    const glm::mat4 proj = glm::perspective(glm::radians(static_cast<float>(kCameraFovDegrees)), static_cast<float>(f.aspect),
-                                            static_cast<float>(kCameraNear), static_cast<float>(kCameraFar));
+    const CameraMatrices cm = cameraMatrices(*f.camera, f.aspect);
+    const glm::mat4 view = cm.view, proj = cm.proj;
     const Frustum frustum = Frustum::fromViewProjection(proj * view);
 
     const Lighting& l = f.lighting;
     const Vec3 sun = sunDirection();
-    shader_->use();
-    shader_->set("uViewProj", proj * view);
-    shader_->set("uView", view);
-    shader_->set("uSunDir", glm::vec3(static_cast<float>(sun.x), static_cast<float>(sun.y), static_cast<float>(sun.z)));
-    shader_->set("uSunRadiance", v3(l.sunColor, l.sunIntensity));
-    shader_->set("uHemiSky", v3(l.hemiSky, l.hemiIntensity));
-    shader_->set("uHemiGround", v3(l.hemiGround, l.hemiIntensity));
-    shader_->set("uEnvAmbient", glm::vec3(static_cast<float>(l.envIntensity) * kEnvIrradiance));
-    shader_->set("uFogColor", v3(toSrgb(l.background)));
-    shader_->set("uFogNear", static_cast<float>(l.fogNear));
-    shader_->set("uFogFar", static_cast<float>(l.fogFar));
-    shader_->set("uExposure", kExposure);
-    shader_->set("uMap", 0);
-    shader_->set("uEmissiveMap", 1);
-    shader_->set("uShadowMap", 2);
-    shader_->set("uModel", glm::mat4(1.0f));
-
-    // Sombra del sol.
-    shader_->set("uShadowOn", shadow ? 1 : 0);
-    if (shadow) {
-        shader_->set("uShadowMatrix", shadow->texMatrix);
-        shader_->set("uShadowBias", static_cast<float>(kShadowBias));
-        shader_->set("uShadowTexel", 1.0f / static_cast<float>(kShadowMapSize));
-        shadowMap_->bindTexture(2);
-    }
     // Luces puntuales reales (siempre las mismas plazas; las vacías con intensidad 0).
     glm::vec3 lightPos[LocalLights::kPoolSize], lightColor[LocalLights::kPoolSize];
     glm::vec2 lightRange[LocalLights::kPoolSize];
@@ -426,9 +491,38 @@ void Renderer::drawScene(const FrameInput& f, const ShadowFrame* shadow, int wid
         lightColor[i] = p ? v3(p->color, p->intensity) : glm::vec3(0);
         lightRange[i] = p ? glm::vec2(static_cast<float>(p->distance), static_cast<float>(p->decay)) : glm::vec2(0, 2);
     }
-    shader_->setArray("uLightPos", lightPos, LocalLights::kPoolSize);
-    shader_->setArray("uLightColor", lightColor, LocalLights::kPoolSize);
-    shader_->setArray("uLightRange", lightRange, LocalLights::kPoolSize);
+    // Uniformes comunes del cuadro; se aplican a los programas de geometría estática y con esqueleto.
+    auto applyFrame = [&](Shader& sh) {
+        sh.use();
+        sh.set("uViewProj", proj * view);
+        sh.set("uView", view);
+        sh.set("uSunDir", glm::vec3(static_cast<float>(sun.x), static_cast<float>(sun.y), static_cast<float>(sun.z)));
+        sh.set("uSunRadiance", v3(l.sunColor, l.sunIntensity));
+        sh.set("uHemiSky", v3(l.hemiSky, l.hemiIntensity));
+        sh.set("uHemiGround", v3(l.hemiGround, l.hemiIntensity));
+        sh.set("uEnvAmbient", glm::vec3(static_cast<float>(l.envIntensity) * kEnvIrradiance));
+        sh.set("uFogColor", v3(toSrgb(l.background)));
+        sh.set("uFogNear", static_cast<float>(l.fogNear));
+        sh.set("uFogFar", static_cast<float>(l.fogFar));
+        sh.set("uExposure", kExposure);
+        sh.set("uMap", 0);
+        sh.set("uEmissiveMap", 1);
+        sh.set("uShadowMap", 2);
+        sh.set("uModel", glm::mat4(1.0f));
+        sh.set("uShadowOn", shadow ? 1 : 0);
+        if (shadow) {
+            sh.set("uShadowMatrix", shadow->texMatrix);
+            sh.set("uShadowBias", static_cast<float>(kShadowBias));
+            sh.set("uShadowTexel", 1.0f / static_cast<float>(kShadowMapSize));
+        }
+        sh.setArray("uLightPos", lightPos, LocalLights::kPoolSize);
+        sh.setArray("uLightColor", lightColor, LocalLights::kPoolSize);
+        sh.setArray("uLightRange", lightRange, LocalLights::kPoolSize);
+    };
+    if (shadow) shadowMap_->bindTexture(2);
+    applyFrame(*skinnedShader_);
+    applyFrame(*shader_);
+    cur_ = shader_.get();
 
     // Casas dibujadas por piezas: sus vértices del lote agrupado se descartan en el shader.
     if (f.houseSeparate) houseFlags_.upload(*f.houseSeparate);
@@ -457,6 +551,9 @@ void Renderer::drawScene(const FrameInput& f, const ShadowFrame* shadow, int wid
     bindMaterial(plain, f.night, 1.0f);
     drawBoxes(f, false, stats);
     shader_->set("uModel", glm::mat4(1.0f));
+
+    // Personajes opacos y con recorte alfa (pelo).
+    drawSkinned(f, SkinPass::Opaque, stats);
 
     // Halos decorativos de luz: aditivos, sin escribir profundidad ni tonemapping.
     if (f.halos && !f.halos->empty()) {
@@ -499,11 +596,20 @@ void Renderer::drawScene(const FrameInput& f, const ShadowFrame* shadow, int wid
     glDepthMask(GL_TRUE);
     glDisable(GL_BLEND);
 
+    // Partes de personajes con mezcla alfa (cejas, pestañas, barba): sin escribir profundidad.
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDepthMask(GL_FALSE);
+    drawSkinned(f, SkinPass::Blend, stats);
+    glDepthMask(GL_TRUE);
+    glDisable(GL_BLEND);
+
     // Silueta del jugador: un perfil cian donde algo lo tapa. La primera pasada pinta solo donde el jugador
     // queda detrás de otra superficie (profundidad GREATER); la segunda repinta el jugador visible y borra
     // la falsa silueta entre sus propias partes (cuerpo y ropa).
     bool anySilhouette = false;
     for (const DynBox& b : f.boxes) anySilhouette |= b.silhouette;
+    for (const SkinnedDraw& d : f.skinned) anySilhouette |= d.silhouette;
     if (anySilhouette) {
         MaterialDef flat;
         flat.unlit = true;
@@ -531,15 +637,58 @@ void Renderer::drawScene(const FrameInput& f, const ShadowFrame* shadow, int wid
             ++stats.drawCalls;
             stats.triangles += unitBox_->triangles();
         }
+        drawSkinned(f, SkinPass::SilhouetteFlat, stats);
         glDisable(GL_BLEND);
         glDisable(GL_POLYGON_OFFSET_FILL);
         glDepthFunc(GL_LEQUAL);
         glDepthMask(GL_TRUE);
         bindMaterial(plain, f.night, 1.0f);
         drawBoxes(f, true, stats);
+        drawSkinned(f, SkinPass::SilhouetteRepaint, stats);
         glDepthFunc(GL_LESS);
         shader_->set("uModel", glm::mat4(1.0f));
     }
+}
+
+void Renderer::drawSkinned(const FrameInput& f, SkinPass pass, RenderStats& stats) {
+    if (f.skinned.empty()) return;
+    cur_ = skinnedShader_.get();
+    skinnedShader_->use();
+    const bool flat = pass == SkinPass::SilhouetteFlat;
+    const bool silhouette = flat || pass == SkinPass::SilhouetteRepaint;
+    for (const SkinnedDraw& d : f.skinned) {
+        if (pass == SkinPass::Opaque && d.blend) continue;
+        if (pass == SkinPass::Blend && !d.blend) continue;
+        if (silhouette && !d.silhouette) continue;
+        if (pass == SkinPass::SilhouetteRepaint && d.blend) continue;  // las partes con alfa ya se mezclaron antes
+        const bool hasMap = d.texture >= 0 && d.texture < static_cast<int>(charTextures_.size());
+        if (hasMap) charTextures_[d.texture].bind(0);
+        cur_->set("uModel", d.model);
+        cur_->set("uHasMap", hasMap ? 1 : 0);
+        cur_->set("uHasEmissive", 0);
+        cur_->set("uEmissiveScale", 0.0f);
+        cur_->set("uAlphaCutoff", d.alphaCutoff);
+        cur_->set("uUnlit", (flat || d.unlit) ? 1 : 0);
+        cur_->set("uToneMap", flat ? 0 : 1);
+        cur_->set("uNoFog", flat ? 1 : 0);
+        cur_->set("uAlpha", flat ? 0.65f : 1.0f);
+        cur_->set("uTint", flat ? v3(rgbFromHex(0x73e5ef)) : v3(d.tint));
+        if (d.doubleSided == cullEnabled_) {
+            cullEnabled_ = !d.doubleSided;
+            if (cullEnabled_) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
+        }
+        if (!flat) {
+            if (d.polygonOffset) { glEnable(GL_POLYGON_OFFSET_FILL); glPolygonOffset(-1.0f, -2.0f); }
+            else glDisable(GL_POLYGON_OFFSET_FILL);
+        }
+        cur_->setMat4Array("uBones", d.palette, std::min(d.paletteCount, kMaxBones));
+        skinMeshes_[d.mesh].draw();
+        ++stats.drawCalls;
+        stats.triangles += skinMeshes_[d.mesh].triangles();
+    }
+    if (!flat) glDisable(GL_POLYGON_OFFSET_FILL);
+    cur_ = shader_.get();
+    shader_->use();
 }
 
 void Renderer::ensureScaledTargets(int w, int h) {

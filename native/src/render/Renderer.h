@@ -6,12 +6,14 @@
 
 #include <glm/glm.hpp>
 
+#include "character/CharacterLibrary.h"
 #include "game/CameraRig.h"
 #include "game/Lighting.h"
 #include "render/Gpu.h"
 #include "render/LocalLights.h"
 #include "render/MeshBuilder.h"
 #include "render/Shadow.h"
+#include "render/SkinnedDraw.h"
 #include "render/VisualWorld.h"
 
 namespace bazuko {
@@ -43,6 +45,7 @@ struct FrameInput {
     // Por id de casa (índice 0 = ninguna): 1 si sus partes altas se dibujan por separado.
     const std::vector<std::uint8_t>* houseSeparate = nullptr;
     std::vector<PartDraw> parts;
+    std::vector<SkinnedDraw> skinned;  // personajes
     // Luces puntuales reales (LocalLights::kPoolSize) y halos decorativos.
     const PooledLight* lights = nullptr;
     const std::vector<Halo>* halos = nullptr;
@@ -58,10 +61,16 @@ struct RenderStats {
     int halos = 0;
 };
 
-class Renderer {
+enum class SkinPass { Opaque, Blend, SilhouetteFlat, SilhouetteRepaint };
+
+class Renderer : public GpuSink {
 public:
     Renderer();
     ~Renderer();
+
+    // GpuSink: texturas y mallas con esqueleto de los personajes.
+    int uploadTexture(const Image& image) override;
+    int uploadSkinnedMesh(const std::vector<float>& vertices, const std::vector<std::uint32_t>& indices) override;
 
     // Sube texturas, materiales y mallas del distrito a la GPU.
     void uploadWorld(const VisualWorld& world);
@@ -88,8 +97,12 @@ private:
     void drawScene(const FrameInput& f, const ShadowFrame* shadow, int width, int height, RenderStats& stats);
     void drawBoxes(const FrameInput& f, bool onlySilhouette, RenderStats& stats);
     void ensureScaledTargets(int w, int h);
+    void drawSkinned(const FrameInput& f, SkinPass pass, RenderStats& stats);
 
-    std::unique_ptr<Shader> shader_, depthShader_, blitShader_;
+    std::unique_ptr<Shader> shader_, depthShader_, blitShader_, skinnedShader_, skinnedDepthShader_;
+    Shader* cur_ = nullptr;  // programa de la pasada actual (bindMaterial)
+    std::vector<GpuSkinnedMesh> skinMeshes_;
+    std::vector<GpuTexture> charTextures_;
     GLuint emptyVao_ = 0;
     std::unique_ptr<GpuMesh> unitBox_, haloQuad_;
     std::unique_ptr<GpuTexture> haloTexture_;

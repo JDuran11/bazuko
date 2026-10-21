@@ -71,6 +71,22 @@ Sin cambios de comportamiento; se verifican con tests (`lights_test.cpp`) los n�
 - **Resolución adaptativa** (`AdaptiveResolution`, 0,75×–1,5×, ventanas de 3 s; `--scale` para forzarla): la escena se dibuja en un FBO multimuestreado, se resuelve a textura y se amplía con un triángulo de pantalla completa (un blit con escalado hacia el framebuffer multimuestreado de la ventana no es válido en OpenGL).
 - Los lotes con `castShadow = false` (suelo, marcas, carteles, cerros) no proyectan sombra.
 
+## Fase 7 · personajes
+Sin correcciones de comportamiento. Verificado con `gltf_test`, `animation_test`, `character_test` y `procedural_test`:
+- **glTF** (`cgltf` + `libwebp`): jerarquía de nodos, skins, materiales, animaciones y el atributo propio `_VID`; `EXT_texture_webp` (la imagen vive en `texture.webp_image`). Solo se decodifican las texturas de color base: los mapas normales (hasta 4096², 67 MB cada uno) no se usan y agotaban la memoria. Las texturas de personaje se reducen a un máximo de 1024 px y se libera su copia en CPU al subirlas a la GPU (RAM ≈ 280 MB con 72 personajes).
+- **Retarget Mixamo → MakeHuman en tiempo de ejecución** (`Retargeter`, port de `retarget.js`): se hornea una vez por cuerpo (6 cuerpos × completo/liviano). No hace falta la herramienta offline `bake_anims` que preveía el plan.
+- **Mezcla de animaciones** (`Animator`): pesos que siguen al objetivo con `k = min(1, dt·8)`, acumulación con slerp ponderado como `PropertyMixer`, `walk`/`run` con `timeScale` por velocidad y acciones sin clip cayendo en idle (solo existen idle/walk/run de prueba).
+- **Ensamblado por piezas** (`CharacterLibrary`): pelo, barba, ropa y calzado atados al esqueleto del cuerpo por nombre de hueso; el cuerpo pierde los triángulos tapados por la ropa (`oculta` + `_VID`); tintes de piel (25 % blanco) y pelo (15 %); materiales de pelo (recorte alfa 0,08), barba/cejas/pestañas (mezcla alfa) y ropa (*polygon offset*). Mallas, texturas y esqueletos se comparten entre personajes con las mismas piezas.
+- **Skinning en GPU** (shader con 64 matrices), sombra con recorte alfa para el pelo y silueta cian del jugador.
+- **Gente de la calle** (`randomStreetLook`, 72 % hombres, ropa vieja en El Cartucho), **LOD** (completo a < 7 m, liviano a > 10 m, sin sombra propia), animación cada 3 cuadros pasados 20 m y congelada pasados 40 m, y sin animar fuera de cámara.
+- **Personaje procedural** (`ProceduralCharacter`, tecla M o `--procedural`): la misma geometría de primitivas que `character.js` con un esqueleto de 16 huesos animado a mano; se dibuja con el pipeline de skinning (una malla por material).
+- **Apariencia** (`Look`): normalización, migración del formato antiguo, `randomLook` y JSON compatible con el guardado web.
+
+Diferencias respecto al web:
+- Las texturas se reducen a 1024 px y no se usan mapas normales (el JS cargaba los de 4096²).
+- Los modelos se leen de `web/public/models` mientras exista (CMake lo detecta); al eliminar `web/` hay que mover esa carpeta a `native/assets/models`.
+- La carga de los 72 personajes tarda ~5 s al arrancar; la pantalla de carga con progreso llega en la fase 9.
+
 Pendientes de fases siguientes (ya identificados):
 - Fase 8: `sortValueMult` sin efecto (se aplicará al valor de lo seleccionado), aviso al perder ítems por inventario lleno, multiplicador por higiene baja en la probabilidad de enfermar (`StatsSystem::getDiseaseChanceMultiplier` ya existe pero nadie lo usa en la versión web), `CraftingStation` sin interacción, `player.speedMult` muerto.
 - Fase 10: desaturación por ánimo bajo (`getDesaturation` ya está portado).

@@ -12,6 +12,7 @@ struct Options {
     int frames = 30;
     double hour = -1;        // < 0: la del reloj del juego
     double posX = -1e9, posZ = -1e9;  // posición inicial en tiles (opcional)
+    bool procedural = false;          // empieza con el personaje liviano (tecla M lo alterna)
     bool atOriginal = false;          // posX/posZ en la rejilla original del centro (WX/WZ), no en tiles expandidos
     double yaw = -1e9;
     double renderScale = 1;  // fracción de la ventana a la que se dibuja la escena (pruebas de resolución adaptativa)
