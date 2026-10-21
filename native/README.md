@@ -7,6 +7,13 @@ El plan y el análisis del código original están en `CHANGES.md` y en el histo
 - Compilador C++20, CMake >= 3.25, Ninja.
 - Fedora: `sudo dnf install SDL3-devel mesa-libGL-devel git-lfs` (SDL3 se descarga y compila si no está).
 
+## Datos de referencia
+`data/game_data.json` y `data/world_reference.json` salen del código JS original:
+```
+node tools/export_data.mjs
+(cd ../web && npm ci --ignore-scripts) && node tools/export_world.mjs
+```
+
 ## Compilar y probar
 ```
 cmake --preset debug

@@ -22,6 +22,20 @@ correcciones de datos viven en `tools/export_data.mjs`, que regenera `data/game_
 Sin cambio, aunque el análisis lo marcó como posible bug:
 - La energía no usa `decayMult`: el talento *Estómago de Hierro* dice "hambre y sed", así que es lo descrito.
 
+## Fase 3 · mundo lógico
+Sin correcciones de comportamiento: el objetivo es paridad exacta con el juego web. Verificada con
+`data/world_reference.json`, que genera `tools/export_world.mjs` ejecutando el código JS original
+(`node tools/export_world.mjs`, requiere `npm ci` en `web/`):
+- mapa completo de 120×111 tiles, ejes de calles, bandas, migración de posiciones v0/v1;
+- zonas reservadas, rejilla de aparición, 640 puestos de parqueo, 6 circuitos de tráfico (40 muestras cada uno) y ruta del bus;
+- 465 cajas de colisión y 400 movimientos `resolveMove`;
+- red peatonal (4325 nodos), rutas con la misma semilla (`Mulberry32Rng` reproduce `mulberry32` bit a bit), 66 peatones + 6 vendedores.
+
+Diferencias de implementación (no de comportamiento):
+- Las rutas peatonales y los NPC reciben el `Rng` inyectado; el tráfico y el bus usan subpasos de 0,05 s como el original.
+- `TrafficRoute::sample` devuelve el final del último tramo si el redondeo lo deja fuera (JS dejaba el vector sin tocar).
+- Los vehículos de tráfico usan las medidas del carro/taxi (4,3 × 1,76 m); la buseta no se usa en la ciudad.
+
 Pendientes de fases siguientes (ya identificados):
 - Fase 8: `sortValueMult` sin efecto (se aplicará al valor de lo seleccionado), aviso al perder ítems por inventario lleno, multiplicador por higiene baja en la probabilidad de enfermar (`StatsSystem::getDiseaseChanceMultiplier` ya existe pero nadie lo usa en la versión web), `CraftingStation` sin interacción, `player.speedMult` muerto.
 - Fase 10: desaturación por ánimo bajo (`getDesaturation` ya está portado).

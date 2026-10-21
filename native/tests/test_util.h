@@ -27,6 +27,16 @@ private:
     std::size_t i_ = 0;
 };
 
+// Siempre el mismo valor.
+class ConstRng : public bazuko::Rng {
+public:
+    explicit ConstRng(double v) : v_(v) {}
+    double next() override { return v_; }
+
+private:
+    double v_;
+};
+
 template <class T>
 const T* first(const std::vector<bazuko::GameEvent>& events) {
     for (const auto& e : events)

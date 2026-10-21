@@ -51,7 +51,17 @@ add_library(bazuko_core STATIC
   src/game/systems/InventorySystem.cpp
   src/game/systems/CraftingSystem.cpp
   src/game/systems/Survival.cpp
-  src/game/systems/SaveSystem.cpp)
+  src/game/systems/SaveSystem.cpp
+  src/world/StreetLayout.cpp
+  src/world/TileMap.cpp
+  src/world/CityLayout.cpp
+  src/world/CollisionWorld.cpp
+  src/world/TrafficRoute.cpp
+  src/world/TrafficSystem.cpp
+  src/world/BusService.cpp
+  src/world/PedestrianNavigation.cpp
+  src/world/PedestrianAgent.cpp
+  src/world/Bogota.cpp)
 target_include_directories(bazuko_core PUBLIC src)
 target_link_libraries(bazuko_core PUBLIC nlohmann_json::nlohmann_json)
 target_compile_options(bazuko_core PRIVATE -Wall -Wextra)
@@ -63,7 +73,7 @@ if(BAZUKO_BUILD_APP)
 endif()
 
 enable_testing()
-add_executable(bazuko_tests tests/main_test.cpp tests/core_test.cpp tests/data_test.cpp tests/sim_test.cpp tests/save_test.cpp)
+add_executable(bazuko_tests tests/main_test.cpp tests/core_test.cpp tests/data_test.cpp tests/sim_test.cpp tests/save_test.cpp tests/world_test.cpp tests/traffic_test.cpp)
 target_compile_definitions(bazuko_tests PRIVATE BAZUKO_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
 target_link_libraries(bazuko_tests PRIVATE bazuko_core doctest::doctest)
 add_test(NAME bazuko_tests COMMAND bazuko_tests)
